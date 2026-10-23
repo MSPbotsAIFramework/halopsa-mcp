@@ -1,0 +1,6 @@
+services:
+  halopsa-mcp:
+    build: .
+    image: halopsa-mcp:local
+    ports:
+      - "8080:8080"

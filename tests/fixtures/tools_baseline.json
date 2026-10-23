@@ -1,0 +1,697 @@
+[
+ {
+  "name": "halopsa_navigate",
+  "description": "Discover available HaloPSA tools by domain. Returns tool names and descriptions for the selected domain. All tools are callable at any time \u2014 this is a help/discovery aid, not a prerequisite.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "domain": {
+     "type": "string",
+     "enum": [
+      "tickets",
+      "clients",
+      "assets",
+      "agents",
+      "invoices",
+      "lookups",
+      "users",
+      "sites"
+     ],
+     "description": "The domain to explore:\n- tickets: Ticket management - list, get, create, update tickets and manage support workflow\n- clients: Client/company management - list and get client information and relationships\n- assets: Asset management - list and get hardware/software assets, configurations\n- agents: Agent management - list and get support staff and technician information\n- invoices: Invoice management - list and get billing and invoice information\n- lookups: Reference data - read the tenant's ticket statuses, priorities, ticket types and Category 1-4 values, so ids and category strings are resolved live instead of hardcoded\n- users: Contact management - search, get, create (with duplicate-prevention by email) and update (partial, including activate/deactivate) contacts\n- sites: Site management - list sites, optionally scoped to one client"
+    }
+   },
+   "required": [
+    "domain"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_status",
+  "description": "Show credentials status and available domains",
+  "inputSchema": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ {
+  "name": "halopsa_tickets_list",
+  "description": "List tickets with optional filters by client, status, agent, open/closed state, or date occurred range",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "number"
+    },
+    "status_id": {
+     "type": "number"
+    },
+    "halo_agent_id": {
+     "type": "number",
+     "description": "ID of an agent in HaloPSA, as returned by halopsa_agents_list. Not an agent ID from the calling platform."
+    },
+    "open_only": {
+     "type": "boolean"
+    },
+    "closed_only": {
+     "type": "boolean"
+    },
+    "dateoccurred_start": {
+     "type": "string",
+     "description": "ISO-8601 start date for tickets (e.g. 2026-04-06T00:00:00Z)"
+    },
+    "dateoccurred_end": {
+     "type": "string",
+     "description": "ISO-8601 end date for tickets"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    },
+    "page_no": {
+     "type": "number",
+     "description": "Page number (1-indexed) for pagination"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_tickets_get",
+  "description": "Get ticket details by ID",
+  "_meta": {
+   "ui/resourceUri": "ui://halopsa/ticket-card.html",
+   "ui": {
+    "resourceUri": "ui://halopsa/ticket-card.html"
+   }
+  },
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "number"
+    },
+    "include_actions": {
+     "type": "boolean",
+     "description": "Include actions/notes"
+    },
+    "full_response": {
+     "type": "boolean",
+     "description": "Return the ticket exactly as HaloPSA sends it, with related records (ticket type, priority, user) expanded in full. Off by default: that reply runs to ~200 KB, almost all of it the ticket type definition, which is the same on every ticket of that type."
+    }
+   },
+   "required": [
+    "ticket_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_tickets_create",
+  "description": "Create ticket",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "summary": {
+     "type": "string"
+    },
+    "details": {
+     "type": "string"
+    },
+    "client_id": {
+     "type": "number"
+    },
+    "tickettype_id": {
+     "type": "number"
+    },
+    "priority_id": {
+     "type": "number"
+    },
+    "halo_agent_id": {
+     "type": "number",
+     "description": "ID of an agent in HaloPSA, as returned by halopsa_agents_list. Not an agent ID from the calling platform."
+    },
+    "site_id": {
+     "type": "number"
+    },
+    "category_1": {
+     "type": "string",
+     "description": "Category 1 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 1) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_2": {
+     "type": "string",
+     "description": "Category 2 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 2) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_3": {
+     "type": "string",
+     "description": "Category 3 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 3) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_4": {
+     "type": "string",
+     "description": "Category 4 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 4) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "full_response": {
+     "type": "boolean",
+     "description": "Return the ticket exactly as HaloPSA sends it, with related records (ticket type, priority, user) expanded in full. Off by default: that reply runs to ~200 KB, almost all of it the ticket type definition, which is the same on every ticket of that type."
+    }
+   },
+   "required": [
+    "summary",
+    "client_id",
+    "tickettype_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_tickets_update",
+  "description": "Update ticket, including reassigning it to a different agent or team",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "number"
+    },
+    "summary": {
+     "type": "string"
+    },
+    "details": {
+     "type": "string"
+    },
+    "status_id": {
+     "type": "number"
+    },
+    "priority_id": {
+     "type": "number"
+    },
+    "tickettype_id": {
+     "type": "number",
+     "description": "New ticket type, by HaloPSA ticket type ID. Resolve a name to an ID with halopsa_lookups_get (kinds: [\"ticket_types\"]). Halo records the change as a hidden action on the ticket. Omit to leave the ticket type unchanged. (PRD-19482)"
+    },
+    "halo_agent_id": {
+     "type": "number",
+     "description": "Assigned agent, by HaloPSA agent ID. Resolve a name to an ID with halopsa_agents_list. Not an agent ID from the calling platform."
+    },
+    "team_id": {
+     "type": "number",
+     "description": "Assigned team, by ID. Resolve a name to an ID with halopsa_teams_list."
+    },
+    "category_1": {
+     "type": "string",
+     "description": "Category 1 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 1) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_2": {
+     "type": "string",
+     "description": "Category 2 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 2) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_3": {
+     "type": "string",
+     "description": "Category 3 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 3) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "category_4": {
+     "type": "string",
+     "description": "Category 4 as its full path string, e.g. \"Hardware>Laptop\". Resolve one with halopsa_lookups_get (kinds: [\"categories\"], category_type_id: 4) and pass that row's `value` verbatim; this is not an id field."
+    },
+    "custom_fields": {
+     "type": "array",
+     "description": "Custom fields to write. Address each field by id or by name; match the value to the field type (checkbox takes a boolean).",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "number",
+        "description": "Custom field id, e.g. 291."
+       },
+       "name": {
+        "type": "string",
+        "description": "Custom field name, e.g. CFEscalated. Use when the id is unknown."
+       },
+       "value": {
+        "type": [
+         "string",
+         "number",
+         "boolean",
+         "null"
+        ],
+        "description": "New value; null clears the field."
+       }
+      },
+      "required": [
+       "value"
+      ]
+     }
+    },
+    "full_response": {
+     "type": "boolean",
+     "description": "Return the ticket exactly as HaloPSA sends it, with related records (ticket type, priority, user) expanded in full. Off by default: that reply runs to ~200 KB, almost all of it the ticket type definition, which is the same on every ticket of that type."
+    }
+   },
+   "required": [
+    "ticket_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_tickets_add_action",
+  "description": "Add note to ticket",
+  "_meta": {
+   "ui/resourceUri": "ui://halopsa/ticket-card.html",
+   "ui": {
+    "resourceUri": "ui://halopsa/ticket-card.html"
+   }
+  },
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "number"
+    },
+    "note": {
+     "type": "string"
+    },
+    "outcome": {
+     "type": "string"
+    },
+    "timetaken": {
+     "type": "number",
+     "description": "Minutes"
+    },
+    "hidden_from_user": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "ticket_id",
+    "note"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_clients_list",
+  "description": "List companies",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "search": {
+     "type": "string"
+    },
+    "inactive": {
+     "type": "boolean",
+     "description": "Include inactive"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_clients_get",
+  "description": "Get company details by ID",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "client_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_clients_create",
+  "description": "Create company",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "website": {
+     "type": "string"
+    },
+    "phonenumber": {
+     "type": "string"
+    },
+    "email": {
+     "type": "string"
+    },
+    "notes": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_clients_search",
+  "description": "Search companies by name",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 25)"
+    }
+   },
+   "required": [
+    "query"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_assets_list",
+  "description": "List configuration items with optional filters",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "number"
+    },
+    "site_id": {
+     "type": "number"
+    },
+    "assettype_id": {
+     "type": "number"
+    },
+    "inactive": {
+     "type": "boolean",
+     "description": "Include inactive"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_assets_get",
+  "description": "Get asset details by ID",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "asset_id": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "asset_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_assets_search",
+  "description": "Search assets by inventory number and key fields",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "client_id": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 25)"
+    }
+   },
+   "required": [
+    "query"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_assets_list_types",
+  "description": "List asset types",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 100)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_agents_list",
+  "description": "List technicians",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "team_id": {
+     "type": "number"
+    },
+    "inactive": {
+     "type": "boolean",
+     "description": "Include inactive"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_agents_get",
+  "description": "Get technician details by HaloPSA agent ID",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "halo_agent_id": {
+     "type": "number",
+     "description": "ID of an agent in HaloPSA, as returned by halopsa_agents_list. Not an agent ID from the calling platform."
+    }
+   },
+   "required": [
+    "halo_agent_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_teams_list",
+  "description": "List teams",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_invoices_list",
+  "description": "List invoices with optional filters by client, status, or date range",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "number"
+    },
+    "status": {
+     "type": "string"
+    },
+    "sent": {
+     "type": "boolean"
+    },
+    "paid": {
+     "type": "boolean"
+    },
+    "invoice_date_start": {
+     "type": "string",
+     "description": "YYYY-MM-DD"
+    },
+    "invoice_date_end": {
+     "type": "string",
+     "description": "YYYY-MM-DD"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_invoices_get",
+  "description": "Get invoice details by ID",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "invoice_id": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "invoice_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_lookups_get",
+  "description": "Read HaloPSA's reference tables \u2014 ticket statuses, priorities, ticket types and the four categorisation trees (Category 1-4) \u2014 so ids and category values come from the live tenant instead of being hardcoded. Returns every requested table in one call. Use it before halopsa_tickets_create or halopsa_tickets_update to resolve a name to the id or string those tools expect.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "kinds": {
+     "type": "array",
+     "description": "Which reference tables to read. Defaults to all four. Ask for only what you need \u2014 categories is by far the largest.",
+     "items": {
+      "type": "string",
+      "enum": [
+       "statuses",
+       "priorities",
+       "ticket_types",
+       "categories"
+      ]
+     }
+    },
+    "category_type_id": {
+     "type": "number",
+     "description": "Restrict categories to one of Halo's four categorisation trees: 1 = Category 1, 2 = Category 2, 3 = Category 3, 4 = Category 4. Omit to read all four; every row carries its own type_id either way.",
+     "enum": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    "tickettype_id": {
+     "type": "number",
+     "description": "Ask Halo to restrict statuses and categories to those valid for this ticket type, as returned by the ticket_types kind. Worth passing before creating or updating a ticket, since Halo rejects a status or category the ticket type does not allow -- but whether it actually narrows the list depends on how the tenant configured those restrictions."
+    },
+    "include_inactive": {
+     "type": "boolean",
+     "description": "Include inactive/hidden rows. Off by default, since an agent writing a ticket should only pick from what is currently selectable."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum rows per kind (default: 200). Narrow with category_type_id or tickettype_id rather than raising this."
+    },
+    "full_response": {
+     "type": "boolean",
+     "description": "Return rows exactly as HaloPSA sends them instead of the fields needed to identify a value. Off by default: reference rows run to ~26 properties each, mostly SLA timers and workflow switches, and projecting cuts a reply to roughly a third."
+    }
+   }
+  }
+ },
+ {
+  "name": "halopsa_users_search",
+  "description": "Search contacts by name or email",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   },
+   "required": [
+    "query"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_users_get",
+  "description": "Get contact details by ID",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "contact_id": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "contact_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_users_create",
+  "description": "Create a contact; refuses and reports the existing record if the email is already in use",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "email": {
+     "type": "string"
+    },
+    "client_id": {
+     "type": "number",
+     "description": "HaloPSA client (company) this contact belongs to. Required by HaloPSA's Contact entity."
+    },
+    "site_id": {
+     "type": "number",
+     "description": "HaloPSA site this contact belongs to; defaults to the client's main site when omitted"
+    },
+    "phonenumber": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "email",
+    "client_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_users_update",
+  "description": "Update only the fields provided; set inactive to deactivate or reactivate a contact",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "contact_id": {
+     "type": "number"
+    },
+    "name": {
+     "type": "string"
+    },
+    "email": {
+     "type": "string"
+    },
+    "phonenumber": {
+     "type": "string"
+    },
+    "inactive": {
+     "type": "boolean",
+     "description": "true deactivates, false reactivates"
+    }
+   },
+   "required": [
+    "contact_id"
+   ]
+  }
+ },
+ {
+  "name": "halopsa_sites_list",
+  "description": "List sites",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "number",
+     "description": "Scope to one client's sites"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of results (default: 50)"
+    }
+   }
+  }
+ }
+]
