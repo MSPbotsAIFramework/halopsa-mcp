@@ -144,8 +144,8 @@ Behaviour notes:
   `actions_limit` / `actions_offset` (`next_actions_offset`). `halopsa_users_get` returns the contact
   the same way; the other get tools drop empty values and "no date" dates.
 - `halopsa_clients_create`: HaloPSA has no phone or email on a client. `phonenumber` is saved on the
-  main site and `email` on the main contact HaloPSA creates with the client (no welcome email is
-  sent); the result shows `main_phonenumber` / `main_contact_email` as HaloPSA stored them, with a
+  main site and `email` on the client's main contact (`contact_name`, default "Main Contact"; HaloPSA creates it with
+  the client, otherwise it is added as a contact of the main site; no welcome email is sent); the result shows `main_phonenumber` / `main_contact_email` as HaloPSA stored them, with a
   `warning` if a value was not saved.
 - Writes to a record that does not exist return `not_found` naming it; invalid arguments (wrong type,
   missing, unknown value) return the `invalid_argument` envelope.

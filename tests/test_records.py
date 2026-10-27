@@ -133,6 +133,7 @@ async def test_users_get_returns_a_compact_contact(respx_mock, call):
 
 
 async def test_clients_create_saves_phone_and_email_through_new_client_fields(respx_mock, call):
+    users = respx_mock.post(f"{API}/Users")
     post = respx_mock.post(f"{API}/Client").mock(return_value=httpx.Response(201, json={"id": 40, "name": "QA"}))
     respx_mock.get(f"{API}/Client/40").mock(
         return_value=httpx.Response(
@@ -152,11 +153,33 @@ async def test_clients_create_saves_phone_and_email_through_new_client_fields(re
             "name": "QA",
             "newclient_phonenumber": "555-0100",
             "newclient_contactemail": "qa-client@example.com",
+            "newclient_contactname": "Main Contact",
             "newclient_sendwelcomeemail": False,
         }
     ]
     assert out["main_phonenumber"] == "555-0100" and out["main_contact_email"] == "qa-client@example.com"
-    assert "warning" not in out
+    assert "warning" not in out and not users.called  # Halo created the main contact itself
+
+
+async def test_clients_create_adds_the_main_contact_when_halo_did_not(respx_mock, call):
+    # HaloPSA created no main contact (QA retest, client 41): the email goes on a new main contact.
+    respx_mock.post(f"{API}/Client").mock(return_value=httpx.Response(201, json={"id": 41}))
+    reads = respx_mock.get(f"{API}/Client/41").mock(
+        side_effect=[
+            httpx.Response(200, json={"id": 41, "main_site_id": 61}),
+            httpx.Response(
+                200,
+                json={"id": 41, "main_site_id": 61, "main_contact_id": 150, "main_contact_email": "qa@example.com"},
+            ),
+        ]
+    )
+    users = respx_mock.post(f"{API}/Users").mock(return_value=httpx.Response(201, json={"id": 150}))
+    out = await call("halopsa_clients_create", name="QA", email="qa@example.com", contact_name="Jane Doe")
+    assert json.loads(users.calls.last.request.content) == [
+        {"name": "Jane Doe", "emailaddress": "qa@example.com", "client_id": 41, "site_id": 61, "ismaincontact": True}
+    ]
+    assert reads.call_count == 2
+    assert out["main_contact_email"] == "qa@example.com" and out["main_contact_id"] == 150 and "warning" not in out
 
 
 async def test_clients_create_warns_when_halo_drops_a_value(respx_mock, call):

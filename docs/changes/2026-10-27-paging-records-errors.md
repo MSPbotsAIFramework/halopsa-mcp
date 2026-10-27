@@ -22,3 +22,7 @@ QA findings on INT (PRD-21467, PRD-21468, PRD-21469).
   (HaloPSA's 400 "not found" is mapped; `halopsa_users_update` and `halopsa_tickets_create` check the
   contact / client first, so no record is created by mistake). Argument-validation errors use the
   `invalid_argument` envelope (PRD-20836 handler, `_arguments.py`).
+- **Retest fix (PRD-21469)**: HaloPSA creates no main contact from `newclient_contactemail` alone, so
+  the email was dropped. `halopsa_clients_create` now also sends `newclient_contactname` (new optional
+  `contact_name`, default "Main Contact"); if the re-read client still has no main contact email, the
+  contact is added with `POST /Users` on the main site (`ismaincontact: true`) and the client is read again.
