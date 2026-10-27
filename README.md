@@ -153,7 +153,10 @@ Behaviour notes:
   looked up and sent with it); `custom_fields` writes custom fields by id or name; `tickettype_id` is
   applied through a hidden action and the ticket is re-read to confirm the change stuck, otherwise
   the tool returns an error.
-- `halopsa_tickets_add_action` takes `timetaken` in minutes and sends HaloPSA hours.
+- `halopsa_tickets_add_action` takes time spent in minutes, as `time_taken_minutes` or `timetaken`
+  (the same thing; passing both is `invalid_argument`), and sends HaloPSA decimal hours rounded to
+  4 places (11 minutes -> 0.1833). Returned actions keep HaloPSA's `timetaken` in hours and add
+  `time_taken_minutes`.
 - `halopsa_users_create` refuses (and returns the existing contact) when the email is already used
   by any contact, active or inactive, and defaults `site_id` to the client's main site.
 - `halopsa_invoices_list`: `status` accepts `posted` / `notposted` (sent to HaloPSA); `sent`, `paid`

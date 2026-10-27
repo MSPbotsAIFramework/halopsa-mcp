@@ -236,6 +236,42 @@ async def test_add_action_converts_minutes_to_hours(respx_mock, call):
     ]
 
 
+async def test_add_action_time_taken_minutes_is_sent_as_hours(respx_mock, call):
+    # PRD-21378: 11 minutes must reach HaloPSA as 0.1833 hours, not 11 hours.
+    route = respx_mock.post(f"{API}/Actions").mock(
+        return_value=httpx.Response(201, json={"id": 3, "ticket_id": 5, "timetaken": 0.1833})
+    )
+    out = await call("halopsa_tickets_add_action", ticket_id=5, note="Fixed printer", time_taken_minutes=11)
+    assert sent(route)[0]["timetaken"] == 0.1833
+    assert out["timetaken"] == 0.1833 and out["time_taken_minutes"] == 11.0
+
+
+async def test_add_action_timetaken_is_minutes(respx_mock, call):
+    route = respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 3}))
+    await call("halopsa_tickets_add_action", ticket_id=5, note="Fixed printer", timetaken=11)
+    assert sent(route)[0]["timetaken"] == 0.1833
+
+
+@pytest.mark.parametrize("args", [{"timetaken": 15, "time_taken_minutes": 15}, {"time_taken_minutes": -1}])
+async def test_add_action_time_arguments_rejected(respx_mock, call, args):
+    route = respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 3}))
+    out = await call("halopsa_tickets_add_action", ticket_id=5, note="x", **args)
+    assert out["error"]["code"] == "invalid_argument" and not route.called
+
+
+async def test_add_action_without_time_sends_none(respx_mock, call):
+    route = respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 3}))
+    await call("halopsa_tickets_add_action", ticket_id=5, note="x")
+    assert "timetaken" not in sent(route)[0]
+
+
+async def test_add_action_describes_time_unit(mcp):
+    tool = {t.name: t for t in await mcp.list_tools()}["halopsa_tickets_add_action"]
+    props = tool.inputSchema["properties"]
+    assert "MINUTES" in props["timetaken"]["description"] and "minutes" in props["time_taken_minutes"]["description"]
+    assert "decimal hours" in tool.description
+
+
 async def test_clients_search_pages_and_continues(respx_mock, call):
     route = respx_mock.get(f"{API}/Client").mock(
         return_value=httpx.Response(200, json={"record_count": 3, "clients": [{"id": i} for i in range(2)]})

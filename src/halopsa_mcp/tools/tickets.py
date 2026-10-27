@@ -208,7 +208,10 @@ def register(mcp: FastMCP, settings: Settings) -> None:
     )
     async def halopsa_tickets_get(
         ticket_id: int,
-        include_actions: Annotated[bool | None, Field(description="Include actions/notes")] = None,
+        include_actions: Annotated[
+            bool | None,
+            Field(description="Include actions/notes. An action's timetaken is decimal hours (0.25 = 15 minutes)."),
+        ] = None,
         full_response: FullResponse = None,
         actions_limit: Annotated[
             int | None, Field(description=f"Actions per call (default {DEFAULT_ACTIONS}, max {MAX_ACTIONS}).")
@@ -231,7 +234,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             actions = rows[start : start + size]
             result: dict[str, Any] = {
                 "ticket": ticket,
-                "actions": actions if full_response else [pick(a, ACTION_FIELDS) for a in actions],
+                "actions": actions if full_response else [_action(a) for a in actions],
                 "actions_offset": start,
             }
             if len(rows) > start + size:
@@ -396,7 +399,11 @@ def register(mcp: FastMCP, settings: Settings) -> None:
 
     @mcp.tool(
         name="halopsa_tickets_add_action",
-        description="Add note to ticket",
+        description=(
+            "Add note to ticket, optionally logging time spent. Give time in minutes (time_taken_minutes or "
+            "timetaken); it is saved in HaloPSA as decimal hours, so the returned timetaken is hours "
+            "(30 minutes -> 0.5) and time_taken_minutes echoes the minutes."
+        ),
         annotations=CREATE,
         structured_output=False,
     )
@@ -404,8 +411,15 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         ticket_id: int,
         note: str,
         outcome: Annotated[str | None, Field(description="Action outcome label (default: Note).")] = None,
-        timetaken: Annotated[float | None, Field(description="Minutes")] = None,
+        timetaken: Annotated[
+            float | None,
+            Field(description="Time spent in MINUTES (e.g. 15), not hours. Same as time_taken_minutes; pass one."),
+        ] = None,
         hidden_from_user: bool | None = None,
+        time_taken_minutes: Annotated[
+            float | None,
+            Field(description="Time spent in minutes (e.g. 90 for 1.5 hours). Converted to HaloPSA hours."),
+        ] = None,
     ) -> str:
         async def handler(client: api.HaloClient):
             if not note.strip():
@@ -415,11 +429,9 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 "note": note,
                 "outcome": outcome or "Note",
             }
-            if timetaken is not None:
-                if timetaken < 0:
-                    raise ToolInputError("timetaken must not be negative.")
-                # Halo stores action time in hours.
-                body["timetaken"] = round(timetaken / 60.0, 4)
+            minutes = _minutes(timetaken, time_taken_minutes)
+            if minutes is not None:
+                body["timetaken"] = minutes_to_hours(minutes)
             if hidden_from_user is not None:
                 body["hiddenfromuser"] = hidden_from_user
             try:
@@ -428,9 +440,32 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 if exc.code == "not_found":
                     raise _missing_ticket(body["ticket_id"]) from exc
                 raise
-            return pick(api.first(saved), ACTION_FIELDS)
+            return _action(api.first(saved))
 
         return await run(settings, handler)
+
+
+def _minutes(timetaken: float | None, time_taken_minutes: float | None) -> float | None:
+    """Time spent in minutes from either parameter (both mean minutes)."""
+    if timetaken is not None and time_taken_minutes is not None:
+        raise ToolInputError("Pass time_taken_minutes or timetaken (both are minutes), not both.")
+    minutes = time_taken_minutes if time_taken_minutes is not None else timetaken
+    if minutes is not None and minutes < 0:
+        raise ToolInputError("Time taken must not be negative.")
+    return minutes
+
+
+def minutes_to_hours(minutes: float) -> float:
+    """HaloPSA stores an action's ``timetaken`` as decimal hours (0.25 = 15 minutes)."""
+    return round(minutes / 60.0, 4)
+
+
+def _action(record: dict[str, Any]) -> dict[str, Any]:
+    """An action as returned to agents; ``timetaken`` stays in HaloPSA hours, minutes are added alongside."""
+    out = pick(record, ACTION_FIELDS)
+    if isinstance(out.get("timetaken"), int | float):
+        out["time_taken_minutes"] = round(out["timetaken"] * 60, 2)
+    return out
 
 
 async def _require(client: api.HaloClient, path: str, message: str) -> None:
