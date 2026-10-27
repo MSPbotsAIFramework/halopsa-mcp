@@ -20,7 +20,8 @@ INSTRUCTIONS = (
     "halopsa_clients_search, an agent with halopsa_agents_list, a team with halopsa_teams_list. "
     "Before creating or updating a ticket, resolve ticket type, status, priority and category values with "
     "halopsa_lookups_get instead of guessing them. To reassign a ticket use halopsa_tickets_update with "
-    "halo_agent_id and/or team_id; to log work or a note use halopsa_tickets_add_action. "
+    "halo_agent_id and/or team_id; to log work or a note use halopsa_tickets_add_action; "
+    "to attach a file or report use halopsa_tickets_add_attachment. "
     "halopsa_navigate describes the tools of one area; halopsa_status checks the connection. "
     "Ask the user before creating or changing records."
 )

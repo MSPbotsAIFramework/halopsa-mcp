@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tool behaviour against a mocked HaloPSA API."""
 
+import base64
 import json
 from urllib.parse import parse_qs
 
@@ -409,3 +410,142 @@ async def test_large_results_are_truncated(respx_mock, call):
     # Shortening the long names is enough here: every record comes back, flagged.
     assert out["fields_truncated"] is True and out["count"] == 100
     assert len(json.dumps(out)) <= 20_500
+
+
+# ---- halopsa_tickets_add_attachment (PRD-21372) ----------------------------
+
+CSV = "client,tickets\r\nExample Co,12\r\nÜmlaut GmbH,3\r\n"
+HTML = "<!doctype html><html><body><h1>Weekly report</h1><p>12 tickets &amp; 3 open</p></body></html>"
+
+
+@pytest.fixture
+def attach(respx_mock):
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    return respx_mock.post(f"{API}/Attachment").mock(
+        return_value=httpx.Response(201, json={"id": 77, "ticket_id": 5, "filename": "x", "data_base64": "Zm9v"})
+    )
+
+
+def b64(text: str) -> str:
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+@pytest.mark.parametrize(
+    ("filename", "text", "mime"), [("report.csv", CSV, "text/csv"), ("report.html", HTML, "text/html")]
+)
+async def test_add_attachment_base64_round_trips(call, attach, filename, text, mime):
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename=filename, content=b64(text))
+    body = sent(attach)
+    assert len(body) == 1
+    body = body[0]
+    assert base64.b64decode(body["data_base64"]).decode("utf-8") == text
+    assert body["ticket_id"] == 5 and body["filename"] == filename and body["content_type"] == mime
+    assert body["isimage"] is False and body["showforusers"] is False and "action_id" not in body
+    assert out == {
+        "ticket_id": 5,
+        "attachment_id": 77,
+        "filename": "x",
+        "content_type": mime,
+        "size_bytes": len(text.encode("utf-8")),
+        "hidden_from_user": True,
+    }
+    assert "data_base64" not in json.dumps(out)
+
+
+async def test_add_attachment_text_encoding(call, attach):
+    out = await call(
+        "halopsa_tickets_add_attachment", ticket_id=5, filename="report.csv", content=CSV, content_encoding="text"
+    )
+    assert base64.b64decode(sent(attach)[0]["data_base64"]).decode("utf-8") == CSV
+    assert out["size_bytes"] == len(CSV.encode("utf-8"))
+
+
+async def test_add_attachment_data_url_and_explicit_type(call, attach):
+    await call(
+        "halopsa_tickets_add_attachment", ticket_id=5, filename="r.bin", content="data:text/csv;base64," + b64(CSV)
+    )
+    assert sent(attach)[0]["content_type"] == "text/csv"
+    await call(
+        "halopsa_tickets_add_attachment", ticket_id=5, filename="r.png", content=b64("x"), content_type="image/png"
+    )
+    body = sent(attach)[0]
+    assert body["content_type"] == "image/png" and body["isimage"] is True
+    await call("halopsa_tickets_add_attachment", ticket_id=5, filename="dir/r.unknownext", content=b64("x"))
+    body = sent(attach)[0]
+    assert body["filename"] == "r.unknownext" and body["content_type"] == "application/octet-stream"
+
+
+async def test_add_attachment_size_limit(call, attach):
+    from halopsa_mcp.tools.tickets import MAX_ATTACHMENT_BYTES
+
+    big = base64.b64encode(b"a" * (MAX_ATTACHMENT_BYTES + 1)).decode("ascii")
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename="big.csv", content=big)
+    assert out["error"]["code"] == "invalid_argument" and "10 MB" in out["error"]["message"]
+    out = await call(
+        "halopsa_tickets_add_attachment",
+        ticket_id=5,
+        filename="big.csv",
+        content="a" * (MAX_ATTACHMENT_BYTES + 1),
+        content_encoding="text",
+    )
+    assert out["error"]["code"] == "invalid_argument" and "10 MB" in out["error"]["message"]
+    assert not attach.called
+    exact = base64.b64encode(b"a" * MAX_ATTACHMENT_BYTES).decode("ascii")
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename="max.csv", content=exact)
+    assert out["size_bytes"] == MAX_ATTACHMENT_BYTES
+
+
+@pytest.mark.parametrize("content", ["not base64!!", "abc", ""])
+async def test_add_attachment_invalid_base64(call, attach, content):
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename="r.csv", content=content)
+    assert out["error"]["code"] == "invalid_argument" and not attach.called
+
+
+async def test_add_attachment_bad_filename(call, attach):
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename=" / ", content=b64("x"))
+    assert out["error"]["code"] == "invalid_argument" and not attach.called
+
+
+async def test_add_attachment_with_note_links_action(respx_mock, call, attach):
+    action = respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 31, "ticket_id": 5}))
+    out = await call(
+        "halopsa_tickets_add_attachment",
+        ticket_id=5,
+        filename="report.csv",
+        content=b64(CSV),
+        note="Weekly report attached",
+    )
+    assert sent(action) == [
+        {"ticket_id": 5, "note": "Weekly report attached", "outcome": "Note", "hiddenfromuser": True}
+    ]
+    assert sent(attach)[0]["action_id"] == 31
+    assert out["action_id"] == 31 and out["attachment_id"] == 77
+
+
+async def test_add_attachment_visible_to_user(respx_mock, call, attach):
+    action = respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 31}))
+    out = await call(
+        "halopsa_tickets_add_attachment",
+        ticket_id=5,
+        filename="report.html",
+        content=b64(HTML),
+        note="Your report",
+        hidden_from_user=False,
+    )
+    assert sent(action)[0]["hiddenfromuser"] is False
+    assert sent(attach)[0]["showforusers"] is True
+    assert out["hidden_from_user"] is False
+
+
+async def test_add_attachment_missing_ticket(respx_mock, call):
+    respx_mock.get(f"{API}/Tickets/9").mock(return_value=httpx.Response(404))
+    upload = respx_mock.post(f"{API}/Attachment")
+    out = await call("halopsa_tickets_add_attachment", ticket_id=9, filename="r.csv", content=b64("x"))
+    assert out["error"]["code"] == "not_found" and "9" in out["error"]["message"] and not upload.called
+
+
+async def test_add_attachment_failure_after_note_names_action(respx_mock, call, attach):
+    respx_mock.post(f"{API}/Actions").mock(return_value=httpx.Response(201, json={"id": 31}))
+    attach.mock(return_value=httpx.Response(400, json={"message": "Bad file"}))
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename="r.csv", content=b64("x"), note="n")
+    assert out["error"]["code"] == "invalid_argument" and "31" in out["error"]["message"]

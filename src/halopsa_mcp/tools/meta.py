@@ -17,13 +17,14 @@ from ._common import LOCAL, READ
 
 DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
     "tickets": (
-        "Ticket management - list, get, create, update tickets and manage support workflow",
+        "Ticket management - list, get, create, update tickets, add notes and attach files",
         (
             "halopsa_tickets_list",
             "halopsa_tickets_get",
             "halopsa_tickets_create",
             "halopsa_tickets_update",
             "halopsa_tickets_add_action",
+            "halopsa_tickets_add_attachment",
         ),
     ),
     "clients": (

@@ -693,5 +693,50 @@
     }
    }
   }
+ },
+ {
+  "name": "halopsa_tickets_add_attachment",
+  "description": "Attach a file (e.g. a CSV or HTML report) to a ticket. content is base64, or plain text with content_encoding \"text\". Max 10 MB after decoding. With note, a note action is added too and the file is attached to it. Hidden from the end user unless hidden_from_user is false. Returns the attachment id (and action_id), not the content.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "integer"
+    },
+    "filename": {
+     "type": "string",
+     "description": "File name with extension, e.g. \"weekly-report.csv\"."
+    },
+    "content": {
+     "type": "string",
+     "description": "File content: base64 (default), or the text itself with content_encoding \"text\"."
+    },
+    "content_encoding": {
+     "type": "string",
+     "enum": [
+      "base64",
+      "text"
+     ],
+     "description": "\"base64\" (default) or \"text\" (UTF-8 text such as CSV or HTML, sent as is)."
+    },
+    "content_type": {
+     "type": "string",
+     "description": "MIME type, e.g. text/csv. Inferred from the file extension if omitted."
+    },
+    "note": {
+     "type": "string",
+     "description": "Optional note to add to the ticket with the file, e.g. what the file is."
+    },
+    "hidden_from_user": {
+     "type": "boolean",
+     "description": "Hide the file (and note) from the end user. Default true."
+    }
+   },
+   "required": [
+    "ticket_id",
+    "filename",
+    "content"
+   ]
+  }
  }
 ]

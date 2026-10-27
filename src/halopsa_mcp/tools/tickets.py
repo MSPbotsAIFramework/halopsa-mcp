@@ -6,8 +6,12 @@ HaloPSA saves tickets and actions with ``POST /Tickets`` / ``POST /Actions`` and
 an object that carries ``id`` updates the existing record.
 """
 
+import base64
+import binascii
+import mimetypes
+import re
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -32,6 +36,10 @@ from ._common import (
 )
 
 MAX_TICKET_PAGE = 100
+# Largest file halopsa_tickets_add_attachment uploads, after decoding.
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENT_MB = MAX_ATTACHMENT_BYTES // (1024 * 1024)
+_DATA_URL = re.compile(r"^data:([^;,]*)(?:;[^,]*)?;base64,", re.IGNORECASE)
 ACTION_FIELDS = (
     "id",
     "ticket_id",
@@ -443,6 +451,134 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             return _action(api.first(saved))
 
         return await run(settings, handler)
+
+    @mcp.tool(
+        name="halopsa_tickets_add_attachment",
+        description=(
+            "Attach a file (e.g. a CSV or HTML report) to a ticket. content is base64, or plain text with "
+            f'content_encoding "text". Max {MAX_ATTACHMENT_MB} MB after decoding. With note, a note action is '
+            "added too and the file is attached to it. Hidden from the end user unless hidden_from_user is false. "
+            "Returns the attachment id (and action_id), not the content."
+        ),
+        annotations=CREATE,
+        structured_output=False,
+    )
+    async def halopsa_tickets_add_attachment(
+        ticket_id: int,
+        filename: Annotated[str, Field(description='File name with extension, e.g. "weekly-report.csv".')],
+        content: Annotated[
+            str,
+            Field(description='File content: base64 (default), or the text itself with content_encoding "text".'),
+        ],
+        content_encoding: Annotated[
+            Literal["base64", "text"],
+            Field(description='"base64" (default) or "text" (UTF-8 text such as CSV or HTML, sent as is).'),
+        ] = "base64",
+        content_type: Annotated[
+            str | None, Field(description="MIME type, e.g. text/csv. Inferred from the file extension if omitted.")
+        ] = None,
+        note: Annotated[
+            str | None, Field(description="Optional note to add to the ticket with the file, e.g. what the file is.")
+        ] = None,
+        hidden_from_user: Annotated[
+            bool, Field(description="Hide the file (and note) from the end user. Default true.")
+        ] = True,
+    ) -> str:
+        async def handler(client: api.HaloClient):
+            tid = int(seg(ticket_id))
+            name = _filename(filename)
+            data = _decode(content, content_encoding)
+            mime = (content_type or "").strip() or _data_url_type(content, content_encoding) or _guess_type(name)
+            if note is not None and not note.strip():
+                raise ToolInputError("note must not be empty when given.")
+            await _require(client, f"/Tickets/{tid}", f"No ticket {tid} in HaloPSA.")
+
+            result: dict[str, Any] = {"ticket_id": tid}
+            action_id = None
+            if note is not None:
+                saved = await client.post(
+                    "/Actions",
+                    [{"ticket_id": tid, "note": note, "outcome": "Note", "hiddenfromuser": hidden_from_user}],
+                )
+                action_id = api.first(saved).get("id")
+                if action_id is not None:
+                    result["action_id"] = action_id
+            body: dict[str, Any] = {
+                "ticket_id": tid,
+                "filename": name,
+                "data_base64": base64.b64encode(data).decode("ascii"),
+                "content_type": mime,
+                "isimage": mime.lower().startswith("image/"),
+                "showforusers": not hidden_from_user,
+            }
+            if action_id is not None:
+                body["action_id"] = action_id
+            try:
+                saved = api.first(await client.post("/Attachment", [body]))
+            except api.ApiError as exc:
+                if action_id is not None:
+                    exc.message = f"Note action {action_id} was added, but the file was not attached. {exc.message}"
+                raise
+            result.update(
+                attachment_id=saved.get("id"),
+                filename=saved.get("filename") or name,
+                content_type=mime,
+                size_bytes=len(data),
+                hidden_from_user=hidden_from_user,
+            )
+            if result["attachment_id"] is None:
+                result["warning"] = "HaloPSA did not return an attachment id; check the ticket's attachments."
+            return result
+
+        return await run(settings, handler)
+
+
+def _filename(value: str) -> str:
+    name = re.split(r"[\\/]", (value or "").strip())[-1].strip()
+    if not name or name in (".", ".."):
+        raise ToolInputError('filename must be a file name such as "report.csv".')
+    return name
+
+
+def _decode(content: str, encoding: str) -> bytes:
+    """Decoded file bytes, within the size limit."""
+    if content is None or content == "":
+        raise ToolInputError("content must not be empty.")
+    if encoding == "text":
+        if len(content) > MAX_ATTACHMENT_BYTES:  # every character is at least one byte
+            raise _too_large()
+        data = content.encode("utf-8")
+    elif encoding == "base64":
+        text = _DATA_URL.sub("", content.strip(), count=1)
+        text = "".join(text.split())
+        if len(text) > (MAX_ATTACHMENT_BYTES // 3 + 1) * 4:
+            raise _too_large()
+        try:
+            data = base64.b64decode(text, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ToolInputError(
+                'content is not valid base64. Encode the file as base64, or pass text with content_encoding "text".'
+            ) from exc
+        if not data:
+            raise ToolInputError("content must not be empty.")
+    else:
+        raise ToolInputError('content_encoding must be "base64" or "text".')
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise _too_large()
+    return data
+
+
+def _too_large() -> ToolInputError:
+    return ToolInputError(f"The file is larger than the {MAX_ATTACHMENT_MB} MB limit for one attachment.")
+
+
+def _data_url_type(content: str, encoding: str) -> str | None:
+    match = _DATA_URL.match(content.strip()) if encoding == "base64" else None
+    return match.group(1).strip() or None if match else None
+
+
+def _guess_type(filename: str) -> str:
+    return mimetypes.guess_type(filename, strict=False)[0] or "application/octet-stream"
 
 
 def _minutes(timetaken: float | None, time_taken_minutes: float | None) -> float | None:

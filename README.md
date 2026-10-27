@@ -100,14 +100,14 @@ on every tool call and calls the REST API at `<instance>/api`. When both a base 
 sent, the tenant is added to the token request as `?tenant=` (as HaloPSA requires for some hosted
 instances). Tokens are never cached between requests. Give the API application an agent with the
 permissions the agents need (read tickets, clients, assets, invoices; write tickets, actions,
-clients and contacts).
+attachments, clients and contacts).
 
 ## Tools
 
 | Area | Tools |
 |---|---|
 | Discovery | `halopsa_navigate`, `halopsa_status` |
-| Tickets | `halopsa_tickets_list`, `halopsa_tickets_get`, `halopsa_tickets_create`, `halopsa_tickets_update`, `halopsa_tickets_add_action` |
+| Tickets | `halopsa_tickets_list`, `halopsa_tickets_get`, `halopsa_tickets_create`, `halopsa_tickets_update`, `halopsa_tickets_add_action`, `halopsa_tickets_add_attachment` |
 | Clients | `halopsa_clients_list`, `halopsa_clients_get`, `halopsa_clients_create`, `halopsa_clients_search` |
 | Assets | `halopsa_assets_list`, `halopsa_assets_get`, `halopsa_assets_search`, `halopsa_assets_list_types` |
 | Agents and teams | `halopsa_agents_list`, `halopsa_agents_get`, `halopsa_teams_list` |
@@ -157,6 +157,13 @@ Behaviour notes:
   (the same thing; passing both is `invalid_argument`), and sends HaloPSA decimal hours rounded to
   4 places (11 minutes -> 0.1833). Returned actions keep HaloPSA's `timetaken` in hours and add
   `time_taken_minutes`.
+- `halopsa_tickets_add_attachment` uploads one file to a ticket with `POST /Attachment`
+  (`data_base64`). `content` is base64 (a `data:<type>;base64,` prefix is accepted) or, with
+  `content_encoding: "text"`, the text itself, sent as UTF-8. Files over 10 MB after decoding and
+  invalid base64 return `invalid_argument`. `content_type` defaults to the type of the file extension.
+  With `note`, a note action is added first and the file is linked to it (`action_id`).
+  `hidden_from_user` (default true) sets the note's `hiddenfromuser` and the attachment's
+  `showforusers`. The result is the attachment id, action id, file name, type and size, never the content.
 - `halopsa_users_create` refuses (and returns the existing contact) when the email is already used
   by any contact, active or inactive, and defaults `site_id` to the client's main site.
 - `halopsa_invoices_list`: `status` accepts `posted` / `notposted` (sent to HaloPSA); `sent`, `paid`
