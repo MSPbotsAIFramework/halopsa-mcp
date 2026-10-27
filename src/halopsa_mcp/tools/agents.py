@@ -12,7 +12,7 @@ from pydantic import Field
 
 from .. import api
 from ..config import Settings
-from ._common import HALO_AGENT_ID_DESC, INCLUDE_INACTIVE_DESC, READ, Limit50, cap, listing, run, seg
+from ._common import HALO_AGENT_ID_DESC, INCLUDE_INACTIVE_DESC, READ, Limit50, Offset, cap, run, seg, slim, window
 
 
 def register(mcp: FastMCP, settings: Settings) -> None:
@@ -21,13 +21,14 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         team_id: Annotated[int | None, Field(description="Only agents in this team (halopsa_teams_list).")] = None,
         inactive: Annotated[bool | None, Field(description=INCLUDE_INACTIVE_DESC)] = None,
         limit: Limit50 = None,
+        offset: Offset = None,
     ) -> str:
         size = cap(limit, 50)
 
         async def handler(client: api.HaloClient):
-            # Halo calls teams "sections" on this endpoint.
+            # Halo calls teams "sections" on this endpoint. It returns every agent; paging is done here.
             params = {"section_id": team_id, "includedisabled": True if inactive else None}
-            return listing(api.rows(await client.get("/Agent", params), "agents"), size)
+            return window(api.rows(await client.get("/Agent", params), "agents"), size, offset)
 
         return await run(settings, handler)
 
@@ -39,15 +40,15 @@ def register(mcp: FastMCP, settings: Settings) -> None:
     )
     async def halopsa_agents_get(halo_agent_id: Annotated[int, Field(description=HALO_AGENT_ID_DESC)]) -> str:
         async def handler(client: api.HaloClient):
-            return api.first(await client.get(f"/Agent/{seg(halo_agent_id)}", {"includedetails": True}))
+            return slim(api.first(await client.get(f"/Agent/{seg(halo_agent_id)}", {"includedetails": True})))
 
         return await run(settings, handler)
 
     @mcp.tool(name="halopsa_teams_list", description="List teams", annotations=READ, structured_output=False)
-    async def halopsa_teams_list(limit: Limit50 = None) -> str:
+    async def halopsa_teams_list(limit: Limit50 = None, offset: Offset = None) -> str:
         size = cap(limit, 50)
 
         async def handler(client: api.HaloClient):
-            return listing(api.rows(await client.get("/Team"), "teams"), size)
+            return window(api.rows(await client.get("/Team"), "teams"), size, offset)
 
         return await run(settings, handler)

@@ -20,14 +20,15 @@ from ._common import (
     HALO_AGENT_ID_DESC,
     READ,
     UPDATE,
+    Offset,
     TicketLimit,
     ToolInputError,
     cap,
-    collapse,
-    listing,
+    fetch_page,
     pick,
     run,
     seg,
+    slim,
 )
 
 MAX_TICKET_PAGE = 100
@@ -43,7 +44,59 @@ ACTION_FIELDS = (
     "important",
     "new_status",
 )
-MAX_ACTIONS = 50
+DEFAULT_ACTIONS = 20
+MAX_ACTIONS = 100
+# What a ticket returns by default. Halo's ticket has about 1,000 fields, most of them settings; with
+# its custom field definitions a new ticket is about 70,000 characters.
+TICKET_FIELDS = (
+    "id",
+    "summary",
+    "details",
+    "status_id",
+    "status_name",
+    "status",
+    "tickettype_id",
+    "tickettype_name",
+    "tickettype",
+    "priority_id",
+    "priority",
+    "impact",
+    "urgency",
+    "client_id",
+    "client_name",
+    "site_id",
+    "site_name",
+    "user_id",
+    "user_name",
+    "user_email",
+    "reportedby",
+    "agent_id",
+    "agent_name",
+    "team_id",
+    "team",
+    "category_1",
+    "category_2",
+    "category_3",
+    "category_4",
+    "sla_id",
+    "onhold",
+    "parent_id",
+    "child_count",
+    "dateoccurred",
+    "datecreated",
+    "lastactiondate",
+    "targetdate",
+    "deadlinedate",
+    "respondbydate",
+    "fixbydate",
+    "dateclosed",
+    "estimate",
+    "timetaken",
+    "emailtolist",
+    "emailcclist",
+    "workflow_stage",
+    "customfields",
+)
 
 FullResponse = Annotated[bool | None, Field(description=FULL_RESPONSE_DESC)]
 
@@ -83,7 +136,12 @@ def _iso(name: str, value: str | None) -> str | None:
 
 def _ticket(raw: Any, full: bool | None) -> dict[str, Any]:
     record = api.first(raw)
-    return record if full else collapse(record)
+    return record if full else slim(record, TICKET_FIELDS)
+
+
+def _missing_ticket(ticket_id: int):
+    """Halo answers a write to a missing ticket with 400; report it as not_found naming the ticket."""
+    return api.ApiError("not_found", f"No ticket {ticket_id} in HaloPSA.", False, 404)
 
 
 def _categories(values: dict[str, str | None]) -> dict[str, str]:
@@ -110,14 +168,17 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         ] = None,
         dateoccurred_end: Annotated[str | None, Field(description="ISO-8601 end date for tickets")] = None,
         limit: TicketLimit = None,
-        page_no: Annotated[int | None, Field(description="Page number (1-indexed) for pagination")] = None,
+        page_no: Annotated[
+            int | None, Field(description="Page number (1-indexed). Prefer offset / next_offset, which never skip.")
+        ] = None,
         team_id: Annotated[
             int | None, Field(description="Only tickets assigned to this team (halopsa_teams_list).")
         ] = None,
         search: Annotated[str | None, Field(description="Free-text search across tickets.")] = None,
+        offset: Offset = None,
     ) -> str:
         size = cap(limit, 50, MAX_TICKET_PAGE)
-        number = max(int(page_no or 1), 1)
+        position = offset if offset is not None else (max(int(page_no or 1), 1) - 1) * size
 
         async def handler(client: api.HaloClient):
             if open_only and closed_only:
@@ -125,9 +186,6 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             start = _iso("dateoccurred_start", dateoccurred_start)
             end = _iso("dateoccurred_end", dateoccurred_end)
             params: dict[str, Any] = {
-                "pageinate": True,
-                "page_size": size,
-                "page_no": number,
                 "client_id": client_id,
                 "status_id": status_id,
                 "agent_id": halo_agent_id,
@@ -138,13 +196,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             }
             if start or end:
                 params.update({"datesearch": "dateoccurred", "startdate": start, "enddate": end})
-            payload = await client.get("/Tickets", params)
-            items = api.rows(payload, "tickets")
-            total = api.record_count(payload)
-            result = listing(items, size, total=total, offset=(number - 1) * size, page_no=number)
-            if total is None:
-                result["has_more"] = len(items) >= size
-            return result
+            return await fetch_page(client, "/Tickets", "tickets", params, size, position)
 
         return await run(settings, handler)
 
@@ -158,17 +210,34 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         ticket_id: int,
         include_actions: Annotated[bool | None, Field(description="Include actions/notes")] = None,
         full_response: FullResponse = None,
+        actions_limit: Annotated[
+            int | None, Field(description=f"Actions per call (default {DEFAULT_ACTIONS}, max {MAX_ACTIONS}).")
+        ] = None,
+        actions_offset: Annotated[
+            int | None,
+            Field(description="Action position to start from (0-based). Pass next_actions_offset.", ge=0),
+        ] = None,
     ) -> str:
+        size = cap(actions_limit, DEFAULT_ACTIONS, MAX_ACTIONS)
+        start = actions_offset or 0
+
         async def handler(client: api.HaloClient):
             ticket = _ticket(await client.get(f"/Tickets/{seg(ticket_id)}", {"includedetails": True}), full_response)
-            if not include_actions:
+            if not include_actions and actions_offset is None:
                 return ticket
-            payload = await client.get("/Actions", {"ticket_id": seg(ticket_id), "count": MAX_ACTIONS})
-            actions = api.rows(payload, "actions")
-            return {
+            # /Actions takes only count, so the actions before the offset are read and skipped.
+            payload = await client.get("/Actions", {"ticket_id": seg(ticket_id), "count": start + size + 1})
+            rows = api.rows(payload, "actions")
+            actions = rows[start : start + size]
+            result: dict[str, Any] = {
                 "ticket": ticket,
                 "actions": actions if full_response else [pick(a, ACTION_FIELDS) for a in actions],
+                "actions_offset": start,
             }
+            if len(rows) > start + size:
+                result["next_actions_offset"] = start + size
+            result["_resume"] = {"key": "next_actions_offset", "start": start}
+            return result
 
         return await run(settings, handler)
 
@@ -196,6 +265,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         async def handler(client: api.HaloClient):
             if not summary.strip():
                 raise ToolInputError("summary must not be empty.")
+            await _require(client, f"/Client/{seg(client_id)}", f"No client {client_id} in HaloPSA.")
             body: dict[str, Any] = {
                 "summary": summary,
                 "details": details,
@@ -299,8 +369,15 @@ def register(mcp: FastMCP, settings: Settings) -> None:
 
             saved: Any = None
             if body:
-                saved = await client.post("/Tickets", [{"id": tid, **body}])
+                try:
+                    saved = await client.post("/Tickets", [{"id": tid, **body}])
+                except api.ApiError as exc:
+                    if exc.code == "not_found":
+                        raise _missing_ticket(tid) from exc
+                    raise
             if tickettype_id is not None:
+                if not body:
+                    await _require(client, f"/Tickets/{tid}", f"No ticket {tid} in HaloPSA.")
                 await _change_ticket_type(client, tid, tickettype_id)
                 saved = await client.get(f"/Tickets/{tid}", {"includedetails": True})
                 actual = api.first(saved).get("tickettype_id")
@@ -345,9 +422,25 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 body["timetaken"] = round(timetaken / 60.0, 4)
             if hidden_from_user is not None:
                 body["hiddenfromuser"] = hidden_from_user
-            return pick(api.first(await client.post("/Actions", [body])), ACTION_FIELDS)
+            try:
+                saved = await client.post("/Actions", [body])
+            except api.ApiError as exc:
+                if exc.code == "not_found":
+                    raise _missing_ticket(body["ticket_id"]) from exc
+                raise
+            return pick(api.first(saved), ACTION_FIELDS)
 
         return await run(settings, handler)
+
+
+async def _require(client: api.HaloClient, path: str, message: str) -> None:
+    """Fail with not_found before a write that would otherwise fail with a misleading message."""
+    try:
+        await client.get(path)
+    except api.ApiError as exc:
+        if exc.code == "not_found":
+            raise api.ApiError("not_found", message, False, 404) from exc
+        raise
 
 
 def _custom_field(cf: CustomField) -> dict[str, Any]:

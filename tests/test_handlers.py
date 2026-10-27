@@ -117,7 +117,8 @@ async def test_tickets_list_params_and_paging(respx_mock, call):
     assert p["agent_id"] == "7" and p["client_id"] == "3" and p["open_only"] == "true"
     assert p["page_size"] == "100" and p["page_no"] == "2" and p["pageinate"] == "true"
     assert p["datesearch"] == "dateoccurred" and p["startdate"] == "2026-04-06T00:00:00Z"
-    assert out["total_count"] == 120 and out["has_more"] is True and out["page_no"] == 2
+    assert out["total_count"] == 120 and out["has_more"] is True
+    assert out["offset"] == 100 and out["next_offset"] == 101
 
 
 async def test_tickets_list_rejects_bad_date(call):
@@ -149,6 +150,7 @@ async def test_tickets_get_with_actions(respx_mock, call):
 
 
 async def test_tickets_create_maps_agent_and_team(respx_mock, call):
+    respx_mock.get(f"{API}/Client/3").mock(return_value=httpx.Response(200, json={"id": 3}))
     respx_mock.get(f"{API}/Team/4").mock(return_value=httpx.Response(200, json={"id": 4, "name": "Service Desk"}))
     route = respx_mock.post(f"{API}/Tickets").mock(return_value=httpx.Response(201, json={"id": 9, "summary": "S"}))
     out = await call(
@@ -234,14 +236,14 @@ async def test_add_action_converts_minutes_to_hours(respx_mock, call):
     ]
 
 
-async def test_clients_search_uses_count_and_has_more(respx_mock, call):
+async def test_clients_search_pages_and_continues(respx_mock, call):
     route = respx_mock.get(f"{API}/Client").mock(
-        return_value=httpx.Response(200, json={"record_count": 3, "clients": [{"id": i} for i in range(3)]})
+        return_value=httpx.Response(200, json={"record_count": 3, "clients": [{"id": i} for i in range(2)]})
     )
     out = await call("halopsa_clients_search", query="Example", limit=2)
     p = route.calls.last.request.url.params
-    assert p["search"] == "Example" and p["count"] == "3"
-    assert out["count"] == 2 and out["has_more"] is True
+    assert p["search"] == "Example" and p["pageinate"] == "true" and p["page_size"] == "2" and p["page_no"] == "1"
+    assert out["count"] == 2 and out["has_more"] is True and out["next_offset"] == 2
 
 
 async def test_agents_list_accepts_bare_or_wrapped_rows(respx_mock, call):
@@ -338,6 +340,7 @@ async def test_users_create_rejects_bad_email(call):
 
 
 async def test_users_update_partial(respx_mock, call):
+    respx_mock.get(f"{API}/Users/8").mock(return_value=httpx.Response(200, json={"id": 8}))
     post = respx_mock.post(f"{API}/Users").mock(return_value=httpx.Response(201, json={"id": 8, "inactive": True}))
     out = await call("halopsa_users_update", contact_id=8, inactive=True)
     assert sent(post) == [{"id": 8, "inactive": True}]
@@ -367,5 +370,6 @@ async def test_large_results_are_truncated(respx_mock, call):
     rows = [{"id": i, "name": "x" * 500} for i in range(100)]
     respx_mock.get(f"{API}/Asset").mock(return_value=httpx.Response(200, json={"assets": rows}))
     out = await call("halopsa_assets_list", limit=100)
-    assert out["truncated"] is True and out["has_more"] is True
+    # Shortening the long names is enough here: every record comes back, flagged.
+    assert out["fields_truncated"] is True and out["count"] == 100
     assert len(json.dumps(out)) <= 20_500

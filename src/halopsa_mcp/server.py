@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """FastMCP server and HTTP app."""
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
+from ._arguments import EnvelopeFastMCP
 from .config import Settings
 from .credentials import CredentialMiddleware
 from .tools import agents, assets, clients, invoices, lookups, meta, sites, tickets, users
@@ -26,8 +26,8 @@ INSTRUCTIONS = (
 )
 
 
-def create_mcp(settings: Settings) -> FastMCP:
-    mcp = FastMCP(
+def create_mcp(settings: Settings) -> EnvelopeFastMCP:
+    mcp = EnvelopeFastMCP(
         name="halopsa-mcp",
         instructions=INSTRUCTIONS,
         stateless_http=True,

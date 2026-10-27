@@ -14,7 +14,7 @@ from pydantic import Field
 
 from .. import api
 from ..config import Settings
-from ._common import READ, Limit50, ToolInputError, cap, listing, run, seg
+from ._common import READ, Limit50, Offset, ToolInputError, cap, fetch_page, run, seg, slim
 
 # Halo writes "no date" as 1899-12-30 / 1900-01-01.
 NO_DATE_BEFORE = "1901-01-01"
@@ -67,39 +67,52 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         invoice_date_start: Annotated[str | None, Field(description="YYYY-MM-DD")] = None,
         invoice_date_end: Annotated[str | None, Field(description="YYYY-MM-DD")] = None,
         limit: Limit50 = None,
+        offset: Offset = None,
     ) -> str:
         size = cap(limit, 50)
 
         async def handler(client: api.HaloClient):
             start = _date("invoice_date_start", invoice_date_start)
             end = _date("invoice_date_end", invoice_date_end)
-            params: dict[str, Any] = {"client_id": client_id, "orderby": "invoice_date", "orderdesc": True}
+            params: dict[str, Any] = {"client_id": client_id, "order": "invoice_date", "orderdesc": True}
             if status and status.strip():
                 key = status.strip().lower().replace(" ", "")
                 if key not in POSTED:
                     raise ToolInputError("status must be 'posted' or 'notposted'.")
                 params["postedonly" if POSTED[key] else "notpostedonly"] = True
             local = sent is not None or paid is not None or start or end
-            params["count"] = SCAN_PAGE if local else size + 1
-            items = api.rows(await client.get("/Invoice", params), "invoices")
-            if local:
-                scanned = len(items)
-                items = [
-                    i
-                    for i in items
-                    if (sent is None or _is_sent(i) == sent)
-                    and (paid is None or _is_paid(i) == paid)
-                    and (not start or str(i.get("invoice_date") or "")[:10] >= start)
-                    and (not end or str(i.get("invoice_date") or "")[:10] <= end)
-                ]
-                result = listing(items, size)
-                if scanned >= SCAN_PAGE:
-                    result["has_more"] = True
-                result["note"] = (
-                    f"sent, paid and date filters were applied to the latest {scanned} invoices HaloPSA returned."
-                )
-                return result
-            return listing(items, size)
+            if not local:
+                return await fetch_page(client, "/Invoice", "invoices", params, size, offset)
+
+            # sent, paid and the date range are not Halo filters: scan one page and filter it here.
+            page = await fetch_page(client, "/Invoice", "invoices", params, SCAN_PAGE, offset)
+            first = page["offset"]
+            matches = [
+                (first + i + 1, inv)
+                for i, inv in enumerate(page["items"])
+                if (sent is None or _is_sent(inv) == sent)
+                and (paid is None or _is_paid(inv) == paid)
+                and (not start or str(inv.get("invoice_date") or "")[:10] >= start)
+                and (not end or str(inv.get("invoice_date") or "")[:10] <= end)
+            ]
+            shown = matches[:size]
+            result: dict[str, Any] = {
+                "items": [inv for _, inv in shown],
+                "count": len(shown),
+                "limit": size,
+                "offset": first,
+                "has_more": False,
+            }
+            if len(matches) > size:
+                result["has_more"], result["next_offset"] = True, shown[-1][0]
+            elif page["has_more"]:
+                result["has_more"], result["next_offset"] = True, page["next_offset"]
+            result["note"] = (
+                f"sent, paid and date filters were applied to {len(page['items'])} invoices from offset {first}; "
+                "a call can return fewer than limit while more remain, so follow next_offset."
+            )
+            result["_resume"] = {"key": "next_offset", "positions": [pos for pos, _ in shown]}
+            return result
 
         return await run(settings, handler)
 
@@ -108,6 +121,6 @@ def register(mcp: FastMCP, settings: Settings) -> None:
     )
     async def halopsa_invoices_get(invoice_id: int) -> str:
         async def handler(client: api.HaloClient):
-            return api.first(await client.get(f"/Invoice/{seg(invoice_id)}", {"includedetails": True}))
+            return slim(api.first(await client.get(f"/Invoice/{seg(invoice_id)}", {"includedetails": True})))
 
         return await run(settings, handler)

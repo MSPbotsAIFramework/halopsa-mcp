@@ -10,7 +10,7 @@ from pydantic import Field
 
 from .. import api
 from ..config import Settings
-from ._common import CREATE, READ, UPDATE, Limit50, ToolInputError, cap, listing, run, seg
+from ._common import CREATE, READ, UPDATE, Limit50, Offset, ToolInputError, cap, fetch_page, run, seg, slim
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CONTACT_FIELDS = (
@@ -23,6 +23,32 @@ CONTACT_FIELDS = (
     "site_id",
     "site_name",
     "inactive",
+)
+# What halopsa_users_get returns by default; Halo's contact has about 380 fields.
+CONTACT_DETAIL_FIELDS = (
+    "id",
+    "name",
+    "firstname",
+    "surname",
+    "title",
+    "jobtitle",
+    "department",
+    "emailaddress",
+    "email2",
+    "email3",
+    "phonenumber",
+    "phonenumber_preferred",
+    "mobilenumber",
+    "mobilenumber2",
+    "client_id",
+    "client_name",
+    "site_id",
+    "site_name",
+    "inactive",
+    "isimportantcontact",
+    "linked_agent_id",
+    "notes",
+    "customfields",
 )
 
 
@@ -59,6 +85,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         limit: Limit50 = None,
         client_id: Annotated[int | None, Field(description="Only contacts of this client.")] = None,
         include_inactive: Annotated[bool | None, Field(description="Include inactive contacts.")] = None,
+        offset: Offset = None,
     ) -> str:
         size = cap(limit, 50)
 
@@ -69,18 +96,23 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 "search": query.strip(),
                 "client_id": client_id,
                 "includeinactive": True if include_inactive else None,
-                "count": size + 1,
             }
-            return listing(api.rows(await client.get("/Users", params), "users"), size)
+            return await fetch_page(client, "/Users", "users", params, size, offset)
 
         return await run(settings, handler)
 
     @mcp.tool(
         name="halopsa_users_get", description="Get contact details by ID", annotations=READ, structured_output=False
     )
-    async def halopsa_users_get(contact_id: int) -> str:
+    async def halopsa_users_get(
+        contact_id: int,
+        full_response: Annotated[
+            bool | None, Field(description="Return the contact exactly as HaloPSA sends it (very large).")
+        ] = None,
+    ) -> str:
         async def handler(client: api.HaloClient):
-            return api.first(await client.get(f"/Users/{seg(contact_id)}", {"includedetails": True}))
+            record = api.first(await client.get(f"/Users/{seg(contact_id)}", {"includedetails": True}))
+            return record if full_response else slim(record, CONTACT_DETAIL_FIELDS)
 
         return await run(settings, handler)
 
@@ -162,6 +194,13 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 body["inactive"] = inactive
             if len(body) == 1:
                 raise ToolInputError("Nothing to update: pass at least one field to change.")
+            # Halo treats an update of a missing contact as a create and fails with "A Site must be selected".
+            try:
+                await client.get(f"/Users/{body['id']}")
+            except api.ApiError as exc:
+                if exc.code == "not_found":
+                    raise api.ApiError("not_found", f"No contact {contact_id} in HaloPSA.", False, 404) from exc
+                raise
             saved = api.first(await client.post("/Users", [body]))
             return {"updated": True, "contact": _contact(saved) or {"id": body["id"]}}
 

@@ -50,6 +50,9 @@ def _status_to_error(status: int, detail: str) -> ApiError:
         )
     if status == 404:
         return ApiError("not_found", f"Not found in HaloPSA. {detail}".strip(), False, status)
+    if status == 400 and "not found" in detail.lower():
+        # Halo answers a write to a missing record with 400 "Record not found" / "Ticket not found."
+        return ApiError("not_found", f"Not found in HaloPSA. {detail}".strip(), False, status)
     if status in (400, 405, 409, 415, 422):
         return ApiError("invalid_argument", f"HaloPSA refused the request ({status}). {detail}".strip(), False, status)
     if status == 429:

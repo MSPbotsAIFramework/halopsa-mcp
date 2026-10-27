@@ -125,15 +125,30 @@ Behaviour notes:
   `{"error": {"code": "...", "message": "...", "retryable": false}}` with `code` one of
   `not_configured`, `unauthorized`, `not_found`, `invalid_argument`, `rate_limited`, `upstream_error`.
   HaloPSA's own error text is included in the message.
-- List tools return `{"items", "count", "limit", "has_more"}` (plus `total_count` / `page_no` where
-  HaloPSA reports them). `limit` defaults to 50 (25 for the search tools, 100 for asset types) and is
-  capped at 200; tickets are capped at 100 per page (HaloPSA's maximum) and paged with `page_no`.
-  Results larger than 20,000 characters are cut and flagged with `truncated` / `has_more`.
+- List and search tools return `{"items", "count", "limit", "offset", "has_more"}` (plus `total_count`
+  where HaloPSA reports it) and take `offset`. When `has_more` is true, `next_offset` is where to
+  continue; it always starts right after the last record returned, also when a page was cut to fit
+  the 20,000-character limit (`truncated`). A call can return fewer than `limit` records while more
+  remain. `limit` defaults to 50 (25 for the search tools, 100 for asset types) and is capped at 200;
+  tickets are capped at 100 per page (HaloPSA's maximum). `page_no` on `halopsa_tickets_list` still
+  works. Records too long on their own come back with long fields shortened (`fields_truncated`),
+  never as a text preview.
 - All tools are always listed. `halopsa_navigate` only describes the tools of one area (teams are
   under `agents`); `halopsa_status` shows which headers were sent, the instance URL and whether a
   token could be obtained, without revealing secrets.
-- Tickets: HaloPSA expands related records (ticket type, priority, user) in full on a ticket.
-  `halopsa_tickets_get/create/update` reduce those to `{id, name}` unless `full_response` is true.
+- Tickets: a HaloPSA ticket has about 1,000 fields plus the full definition of every custom field
+  (about 70,000 characters for a new ticket). `halopsa_tickets_get/create/update` return the fields
+  agents use (summary, details, status, type, priority, client, site, contact, agent, team,
+  categories, dates), related records reduced to `{id, name}` and only the custom fields that hold a
+  value, unless `full_response` is true. With `include_actions`, actions are paged with
+  `actions_limit` / `actions_offset` (`next_actions_offset`). `halopsa_users_get` returns the contact
+  the same way; the other get tools drop empty values and "no date" dates.
+- `halopsa_clients_create`: HaloPSA has no phone or email on a client. `phonenumber` is saved on the
+  main site and `email` on the main contact HaloPSA creates with the client (no welcome email is
+  sent); the result shows `main_phonenumber` / `main_contact_email` as HaloPSA stored them, with a
+  `warning` if a value was not saved.
+- Writes to a record that does not exist return `not_found` naming it; invalid arguments (wrong type,
+  missing, unknown value) return the `invalid_argument` envelope.
 - `halopsa_tickets_update` changes only the fields given. `team_id` assigns the team (the team name is
   looked up and sent with it); `custom_fields` writes custom fields by id or name; `tickettype_id` is
   applied through a hidden action and the ticket is re-read to confirm the change stuck, otherwise

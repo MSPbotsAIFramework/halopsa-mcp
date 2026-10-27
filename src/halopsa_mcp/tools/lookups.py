@@ -54,6 +54,7 @@ def _fit(result: dict[str, Any]) -> dict[str, Any]:
         biggest["count"] = keep
         biggest["has_more"] = True
         biggest["truncated"] = True
+        biggest["next_offset"] = biggest["offset"] + keep
     return result
 
 
@@ -114,6 +115,14 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             bool | None,
             Field(description="Return rows exactly as HaloPSA sends them instead of the identifying fields."),
         ] = None,
+        offset: Annotated[
+            int | None,
+            Field(
+                description="Row position to start from in each requested table (0-based). Pass a table's "
+                "next_offset, asking for that one kind.",
+                ge=0,
+            ),
+        ] = None,
     ) -> str:
         size = cap(limit, DEFAULT_ROWS)
         wanted = list(dict.fromkeys(kinds or ALL_KINDS))
@@ -144,7 +153,16 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 if not include_inactive:
                     found = [r for r in found if _active(r)]
                 rows = found if full_response else [_project(kind, r) for r in found]
-                entry: dict[str, Any] = {"items": rows[:size], "count": len(rows[:size]), "has_more": len(rows) > size}
+                first = offset or 0
+                shown = rows[first : first + size]
+                entry: dict[str, Any] = {
+                    "items": shown,
+                    "count": len(shown),
+                    "offset": first,
+                    "has_more": len(rows) > first + size,
+                }
+                if entry["has_more"]:
+                    entry["next_offset"] = first + size
                 if kind in NOTES:
                     entry["note"] = NOTES[kind]
                 result[kind] = entry
