@@ -1,0 +1,57 @@
+[
+  {
+    "id": "TC-SLA-001",
+    "ac": "AC1",
+    "text": "Given a valid sla_id that exists in the tenant, When halopsa_sla_get is called with it, Then the result has id, name, and a priorities array where each item has id, name, responsetime, fixtime, colour",
+    "type": "auto",
+    "tests": ["tests/test_handlers.py::test_sla_get_returns_id_name_and_priorities"]
+  },
+  {
+    "id": "TC-SLA-002",
+    "ac": "AC6",
+    "text": "Given an SLA whose priority rows omit some of responsetime/fixtime/colour, or whose priorities list is empty, When halopsa_sla_get is called, Then the missing fields are omitted per row and an empty priorities list does not fail the call",
+    "type": "auto",
+    "tests": ["tests/test_handlers.py::test_sla_get_drops_empty_priority_fields", "tests/test_handlers.py::test_sla_get_empty_priorities_list"]
+  },
+  {
+    "id": "TC-SLA-003",
+    "ac": "AC2",
+    "text": "Given an sla_id that does not exist in the tenant, When halopsa_sla_get is called, Then the result is a structured not_found error, not a raw exception or a disguised empty success",
+    "type": "auto",
+    "tests": ["tests/test_handlers.py::test_sla_get_unknown_id_returns_not_found"]
+  },
+  {
+    "id": "TC-SLA-004",
+    "ac": "AC3",
+    "text": "Given a missing or non-numeric sla_id, When halopsa_sla_get is called, Then the result is invalid_argument and no HTTP request is made to HaloPSA",
+    "type": "auto",
+    "tests": ["tests/test_handlers.py::test_sla_get_non_numeric_id_returns_invalid_argument_without_calling_halo"]
+  },
+  {
+    "id": "TC-SLA-005",
+    "ac": "AC4",
+    "text": "Given credential headers for two different tenants, When halopsa_sla_get is called once per tenant with that tenant's own sla_id, Then each call returns only that tenant's SLA data and nothing is cached or shared across the two calls",
+    "type": "manual",
+    "steps": [
+      "Send tools/call halopsa_sla_get with tenant A's X-Halo-* headers and an SLA id known to exist in tenant A",
+      "Send tools/call halopsa_sla_get with tenant B's X-Halo-* headers and an SLA id known to exist in tenant B",
+      "Compare both responses against each tenant's own HaloPSA instance"
+    ],
+    "expect": "Tenant A's response matches only tenant A's SLA (id/name/priorities); tenant B's response matches only tenant B's SLA; neither response leaks the other tenant's data",
+    "result": "blocked",
+    "evidence": "needs a real vendor account with at least two HaloPSA tenants/instances; none available in this environment (does not block the design or dev exit per references/mcp-track.md: a missing vendor test account is not a blocker)"
+  },
+  {
+    "id": "TC-SLA-006",
+    "ac": "AC5",
+    "text": "Given halopsa_sla_get is registered, When tools/list is read, Then it appears with readOnlyHint=true and destructiveHint=false, and every pre-existing tool's name, required parameters and parameter types are unchanged",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_tool_names_match_baseline",
+      "tests/test_tools.py::test_parameters_are_backward_compatible",
+      "tests/test_tools.py::test_annotations",
+      "tests/test_tools.py::test_navigate_covers_every_tool",
+      "tests/test_tools.py::test_descriptions_are_concise"
+    ]
+  }
+]
