@@ -4,35 +4,55 @@
     "ac": "AC1",
     "text": "Given ticket 456 has at least one action, When halopsa_tickets_list_actions(ticket_id=456) is called with no filters, Then the response's items contains only actions for ticket 456, each with id, who, who_type, who_agentid, note, outcome, datetime, new_status, old_status, hiddenfromuser, timetaken, time_taken_minutes, attachment_count, replied_to_action_id present when HaloPSA sent them.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_returns_only_this_ticket_with_richer_fields"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed, 0 failed. Mocked GET /Tickets/456 (exists) and GET /Actions (one action for ticket 456 with every listed field set, plus replied_to_action_id: null). Asserts out[\"items\"] == [one dict with id, ticket_id, who, who_type, who_agentid, note, outcome, datetime, new_status, old_status, hiddenfromuser, timetaken, time_taken_minutes (derived: 0.5h -> 30.0), attachment_count present; replied_to_action_id absent because it was null and pick() drops non-present/None fields] (tests/test_handlers.py)."
   },
   {
     "id": "TC2",
     "ac": "AC2",
     "text": "Given ticket 789 exists and has zero actions, When the tool is called for ticket 789, Then items is an empty list and no error is returned.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_zero_actions_is_empty_not_an_error"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Mocked GET /Tickets/789 (exists) and GET /Actions -> {\"record_count\": 0, \"actions\": []}. Asserts out[\"items\"] == [] and \"error\" not in out (tests/test_handlers.py)."
   },
   {
     "id": "TC3",
     "ac": "AC3",
     "text": "Given ticket_id=99999999 does not exist in HaloPSA, When the tool is called with that id, Then the tool returns a not_found error naming ticket 99999999, and no call to /Actions is made.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_missing_ticket_short_circuits"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Mocked GET /Tickets/99999999 -> 404. Asserts out[\"error\"][\"code\"] == \"not_found\", \"99999999\" in message, and the /Actions route was never called (route.called is False) -- the _require() existence check short-circuits before _fetch_actions runs (tests/test_handlers.py)."
   },
   {
     "id": "TC4",
     "ac": "AC4",
     "text": "Given exclude_system=true and important_only=true are both passed, When the tool is called, Then the outgoing GET /Actions request includes both excludesys=true and importantonly=true, and no other filter query parameter is present.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_sends_only_the_set_filters"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Calls the tool with exclude_system=True, important_only=True; asserts the outgoing request has excludesys=\"true\" and importantonly=\"true\", and none of the other 9 filter query-param names are present (tests/test_handlers.py)."
   },
   {
     "id": "TC5",
     "ac": "AC4",
     "text": "Given no optional filters are passed, When the tool is called, Then the outgoing GET /Actions request has none of the 11 filter query parameters set (only ticket_id and count).",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_sends_no_filters_when_none_set"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Calls the tool with no optional arguments; asserts set(request.url.params.keys()) == {\"ticket_id\", \"count\"} -- all 11 filters are None-dropped by HaloClient.request's own params cleaning (api.py:188), nothing new needed in the tool itself (tests/test_handlers.py)."
   },
   {
     "id": "TC6",
@@ -46,34 +66,54 @@
     ],
     "expect": "The action's note_html field is present and non-empty, and reflects the HTML content of the note.",
     "result": "untested",
-    "evidence": "needs a real vendor account; not executed in this environment, per mcp-track.md 2.5/'completion standard' item 3 this does not block dev or INT publish."
+    "evidence": "needs a real vendor account; not executed in this environment, per mcp-track.md 2.5/'completion standard' item 3 this does not block dev or INT publish. Unit coverage (test_list_actions_full_response_is_unslimmed) proves include_html_note is passed through and that an arbitrary field such as note_html is not dropped when present in HaloPSA's reply, but cannot confirm what a live tenant actually sends for that flag."
   },
   {
     "id": "TC7",
     "ac": "AC6",
     "text": "Given a ticket with 25 actions and limit=20, When the tool is called with no offset, Then items has 20 entries, has_more is true, and next_offset is 20; calling again with offset=20 returns the remaining 5 entries with has_more false.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_pages_by_offset"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Fake /Actions endpoint returns record_count=25 and the first `count` rows of a 25-row fixture (mirroring HaloPSA's own count-only semantics). First call (limit=20): items ids 0..19, has_more True, next_offset 20. Second call (offset=20, limit=20): items ids 20..24 (5 entries), has_more False, no next_offset key (tests/test_handlers.py)."
   },
   {
     "id": "TC8",
     "ac": "AC7",
     "text": "Given no HaloPSA credential headers are sent, When the tool is called, Then it returns the not_configured error envelope, matching every other tool's behavior for the same condition.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_not_configured_without_credentials"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Clears the credentials ContextVar (same pattern as test_missing_credentials_envelope for other tools) and asserts out[\"error\"][\"code\"] == \"not_configured\" (tests/test_handlers.py). No special-casing was added for this tool -- it relies on run()'s existing not_configured path."
   },
   {
     "id": "TC9",
     "ac": "AC1",
-    "text": "Given ticket_id is passed as a non-numeric value (e.g. \"abc\"), When the tool is called, Then it returns the invalid_argument error envelope rather than forwarding a malformed request to HaloPSA.",
+    "text": "Given ticket_id is passed as a non-numeric value (e.g. \"abc\"), When the tool is called, Then it returns the invalid_argument error envelope (via seg()'s existing numeric-id check) rather than forwarding a malformed request to HaloPSA.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_handlers.py::test_list_actions_rejects_non_numeric_ticket_id"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Calls the tool with ticket_id=\"abc\"; asserts out[\"error\"][\"code\"] == \"invalid_argument\". Rejected by FastMCP/pydantic's own int-coercion validation before the handler runs (same generic path test_argument_errors.py::test_wrong_type_is_invalid_argument_without_echoing_the_value already covers for any tool's first required scalar argument); seg()'s own numeric check inside the handler is the second line of defense for a value that does coerce (e.g. a negative or non-integer float) but is not a valid HaloPSA id segment."
   },
   {
     "id": "TC10",
     "ac": "AC8",
     "text": "Given the live tools/list output after this change, When compared against tests/fixtures/tools_baseline.json by the existing contract-test suite, Then every existing tool still has all of its baseline parameters with none newly required, no tool is renamed, and halopsa_tickets_list_actions appears with ticket_id as its only required parameter.",
     "type": "auto",
-    "tests": []
+    "tests": [
+      "tests/test_tools.py::test_tool_names_match_baseline",
+      "tests/test_tools.py::test_parameters_are_backward_compatible",
+      "tests/test_tools.py::test_navigate_covers_every_tool",
+      "tests/test_tools.py::test_annotations",
+      "tests/test_tools.py::test_tools_list_snapshot"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ c94ca03: 137 passed. Added a baseline entry for halopsa_tickets_list_actions (required: [\"ticket_id\"]) to tests/fixtures/tools_baseline.json; every pre-existing tool's baseline entry is unchanged. Added \"halopsa_tickets_list_actions\" to DOMAINS[\"tickets\"] in tools/meta.py (test_navigate_covers_every_tool requires every baseline tool to be reachable from halopsa_navigate). test_annotations' read-only name-suffix tuple extended with \"_list_actions\" (the new tool's name does not end in a previously-recognized suffix such as \"_list\" or \"_get\"; without this it would have failed test_annotations as readOnlyHint=True but is_read=False) -- a generic naming-convention check, not a loosening of this ticket's own AC/TC judgements. test_tools_list_snapshot's and test_middleware.py::test_placeholder_values_are_accepted's hardcoded tool counts updated from 27 to 28. Local MCP smoke test (see Self-test) independently confirms 28 tools live, including the new one, with ticket_id as its only required parameter."
   }
 ]
