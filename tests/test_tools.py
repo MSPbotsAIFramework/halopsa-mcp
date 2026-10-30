@@ -89,4 +89,4 @@ async def test_tools_list_snapshot(mcp):
     summary = {n: sorted(t.inputSchema.get("properties", {})) for n, t in tools.items()}
     assert summary["halopsa_tickets_update"][:3] == ["category_1", "category_2", "category_3"]
     assert "custom_fields" in summary["halopsa_tickets_update"]
-    assert len(tools) == 27
+    assert len(tools) == 28

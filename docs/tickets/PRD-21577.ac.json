@@ -4,28 +4,36 @@
     "ac": "AC1",
     "text": "Given a valid sla_id that exists in the tenant, When halopsa_sla_get is called with it, Then the result has id, name, and a priorities array where each item has id, name, responsetime, fixtime, colour",
     "type": "auto",
-    "tests": ["tests/test_handlers.py::test_sla_get_returns_id_name_and_priorities"]
+    "tests": ["tests/test_handlers.py::test_sla_get_returns_id_name_and_priorities"],
+    "result": "pass",
+    "evidence": "uv run pytest -v tests/test_handlers.py::test_sla_get_returns_id_name_and_priorities -> 1 passed (also asserts includedetails=true was sent to GET /SLA/7)"
   },
   {
     "id": "TC-SLA-002",
     "ac": "AC6",
     "text": "Given an SLA whose priority rows omit some of responsetime/fixtime/colour, or whose priorities list is empty, When halopsa_sla_get is called, Then the missing fields are omitted per row and an empty priorities list does not fail the call",
     "type": "auto",
-    "tests": ["tests/test_handlers.py::test_sla_get_drops_empty_priority_fields", "tests/test_handlers.py::test_sla_get_empty_priorities_list"]
+    "tests": ["tests/test_handlers.py::test_sla_get_drops_empty_priority_fields", "tests/test_handlers.py::test_sla_get_empty_priorities_list"],
+    "result": "pass",
+    "evidence": "uv run pytest -v tests/test_handlers.py::test_sla_get_drops_empty_priority_fields tests/test_handlers.py::test_sla_get_empty_priorities_list -> 2 passed. Implementation note: priorities is trimmed row-by-row and kept as [] rather than run through slim() at the top level (slim() drops an empty list entirely), see docs/changes/2026-10-30-halopsa-sla-get.md"
   },
   {
     "id": "TC-SLA-003",
     "ac": "AC2",
     "text": "Given an sla_id that does not exist in the tenant, When halopsa_sla_get is called, Then the result is a structured not_found error, not a raw exception or a disguised empty success",
     "type": "auto",
-    "tests": ["tests/test_handlers.py::test_sla_get_unknown_id_returns_not_found"]
+    "tests": ["tests/test_handlers.py::test_sla_get_unknown_id_returns_not_found"],
+    "result": "pass",
+    "evidence": "uv run pytest -v tests/test_handlers.py::test_sla_get_unknown_id_returns_not_found -> 1 passed (mocked 404 from GET /SLA/999 maps to error.code == not_found via api.ApiError, same mapping halopsa_clients_get etc. already rely on)"
   },
   {
     "id": "TC-SLA-004",
     "ac": "AC3",
     "text": "Given a missing or non-numeric sla_id, When halopsa_sla_get is called, Then the result is invalid_argument and no HTTP request is made to HaloPSA",
     "type": "auto",
-    "tests": ["tests/test_handlers.py::test_sla_get_non_numeric_id_returns_invalid_argument_without_calling_halo"]
+    "tests": ["tests/test_handlers.py::test_sla_get_non_numeric_id_returns_invalid_argument_without_calling_halo"],
+    "result": "pass",
+    "evidence": "uv run pytest -v tests/test_handlers.py::test_sla_get_non_numeric_id_returns_invalid_argument_without_calling_halo -> 1 passed, asserts the mocked GET /SLA/* route was never called. Also covered generically for the missing-argument case by tests/test_argument_errors.py (schema validation returns invalid_argument before any tool code runs)."
   },
   {
     "id": "TC-SLA-005",
@@ -39,7 +47,7 @@
     ],
     "expect": "Tenant A's response matches only tenant A's SLA (id/name/priorities); tenant B's response matches only tenant B's SLA; neither response leaks the other tenant's data",
     "result": "blocked",
-    "evidence": "needs a real vendor account with at least two HaloPSA tenants/instances; none available in this environment (does not block the design or dev exit per references/mcp-track.md: a missing vendor test account is not a blocker)"
+    "evidence": "needs a real vendor account with at least two HaloPSA tenants/instances; none available in this environment (does not block the design or dev exit per references/mcp-track.md: a missing vendor test account is not a blocker). Code-level evidence instead: handler reads credentials only via current() inside run() per request, no module-level or cross-request state is introduced by halopsa_sla_get -- identical isolation shape to every other *_get tool in this server."
   },
   {
     "id": "TC-SLA-006",
@@ -52,6 +60,8 @@
       "tests/test_tools.py::test_annotations",
       "tests/test_tools.py::test_navigate_covers_every_tool",
       "tests/test_tools.py::test_descriptions_are_concise"
-    ]
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -v tests/test_tools.py::test_tool_names_match_baseline tests/test_tools.py::test_parameters_are_backward_compatible tests/test_tools.py::test_annotations tests/test_tools.py::test_navigate_covers_every_tool tests/test_tools.py::test_descriptions_are_concise -> 5 passed (tools_baseline.json updated with halopsa_sla_get's name/description/inputSchema). Also confirmed live via local server smoke test: POST /mcp tools/list with placeholder X-Halo-* headers returns 28 tools (27 + 1), halopsa_sla_get entry has readOnlyHint=true, destructiveHint=false, inputSchema.required=[\"sla_id\"]."
   }
 ]

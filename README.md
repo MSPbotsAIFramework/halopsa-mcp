@@ -112,7 +112,7 @@ attachments, clients and contacts).
 | Assets | `halopsa_assets_list`, `halopsa_assets_get`, `halopsa_assets_search`, `halopsa_assets_list_types` |
 | Agents and teams | `halopsa_agents_list`, `halopsa_agents_get`, `halopsa_teams_list` |
 | Invoices | `halopsa_invoices_list`, `halopsa_invoices_get` |
-| Reference data | `halopsa_lookups_get` |
+| Reference data | `halopsa_lookups_get`, `halopsa_sla_get` |
 | Contacts | `halopsa_users_search`, `halopsa_users_get`, `halopsa_users_create`, `halopsa_users_update` |
 | Sites | `halopsa_sites_list` |
 
@@ -172,6 +172,11 @@ Behaviour notes:
 - `halopsa_lookups_get` returns the identifying fields of each row; for priorities,
   `ticket_priority_id` is the value a ticket's `priority_id` takes. A table that fails is reported in
   place without failing the others.
+- `halopsa_sla_get` returns one SLA's `id`, `name` and `priorities` (each with `id`, `name`,
+  `responsetime`, `fixtime`, `colour`, whichever HaloPSA sent). Unlike
+  `halopsa_lookups_get(kinds=["priorities"])` (a flat list of every priority in the tenant, without
+  timing or colour), this is one SLA's own priority list with the fields Halo stores on it.
+  `priorities` is `[]`, not omitted, when the SLA has none configured.
 - Transient failures (429, 5xx, timeouts) are retried with backoff, honouring `Retry-After`; one tool
   call stays under 120 seconds.
 

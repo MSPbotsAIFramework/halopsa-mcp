@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .. import _json, api
 from ..config import Settings
-from ._common import READ, cap, run
+from ._common import READ, cap, run, seg, slim
 
 Kind = Literal["statuses", "priorities", "ticket_types", "categories"]
 ALL_KINDS: tuple[Kind, ...] = ("statuses", "priorities", "ticket_types", "categories")
@@ -167,5 +167,26 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                     entry["note"] = NOTES[kind]
                 result[kind] = entry
             return _fit(result)
+
+        return await run(settings, handler)
+
+    @mcp.tool(
+        name="halopsa_sla_get",
+        description=(
+            "Get an SLA's details by ID, including its priority list (id, name, response time, fix time, "
+            "colour). Use it to resolve a priority name to the id halopsa_tickets_create/_update expect."
+        ),
+        annotations=READ,
+        structured_output=False,
+    )
+    async def halopsa_sla_get(sla_id: int) -> str:
+        async def handler(client: api.HaloClient):
+            record = api.first(await client.get(f"/SLA/{seg(sla_id)}", {"includedetails": True}))
+            # slim() drops an empty list entirely, but an SLA with no priorities configured is a
+            # valid answer (AC6), so priorities is trimmed row-by-row and kept as [] rather than
+            # going through slim() at the top level like the other *_get tools.
+            out = slim({k: v for k, v in record.items() if k != "priorities"})
+            out["priorities"] = [slim(row) for row in record.get("priorities") or []]
+            return out
 
         return await run(settings, handler)

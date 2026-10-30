@@ -360,6 +360,59 @@ async def test_lookups_large_result_is_trimmed(respx_mock, call):
     assert len(json.dumps(out)) <= 21_000
 
 
+async def test_sla_get_returns_id_name_and_priorities(respx_mock, call):
+    route = respx_mock.get(f"{API}/SLA/7").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": 7,
+                "name": "Gold SLA",
+                "priorities": [
+                    {"id": 1, "name": "Critical", "responsetime": 15, "fixtime": 240, "colour": "#ff0000"},
+                ],
+            },
+        )
+    )
+    out = await call("halopsa_sla_get", sla_id=7)
+    assert out == {
+        "id": 7,
+        "name": "Gold SLA",
+        "priorities": [{"id": 1, "name": "Critical", "responsetime": 15, "fixtime": 240, "colour": "#ff0000"}],
+    }
+    assert route.calls.last.request.url.params["includedetails"] == "true"
+
+
+async def test_sla_get_drops_empty_priority_fields(respx_mock, call):
+    respx_mock.get(f"{API}/SLA/8").mock(
+        return_value=httpx.Response(
+            200, json={"id": 8, "name": "Silver SLA", "priorities": [{"id": 2, "name": "Low", "colour": ""}]}
+        )
+    )
+    out = await call("halopsa_sla_get", sla_id=8)
+    assert out["priorities"] == [{"id": 2, "name": "Low"}]
+
+
+async def test_sla_get_empty_priorities_list(respx_mock, call):
+    respx_mock.get(f"{API}/SLA/9").mock(return_value=httpx.Response(200, json={"id": 9, "name": "No priorities"}))
+    out = await call("halopsa_sla_get", sla_id=9)
+    assert out == {"id": 9, "name": "No priorities", "priorities": []}
+
+
+async def test_sla_get_unknown_id_returns_not_found(respx_mock, call):
+    respx_mock.get(f"{API}/SLA/999").mock(
+        return_value=httpx.Response(404, text="SLA not found", headers={"Retry-After": "0"})
+    )
+    out = await call("halopsa_sla_get", sla_id=999)
+    assert out["error"]["code"] == "not_found"
+
+
+async def test_sla_get_non_numeric_id_returns_invalid_argument_without_calling_halo(respx_mock, call):
+    route = respx_mock.get(url__regex=rf"{API}/SLA/.*").mock(return_value=httpx.Response(200, json={"id": 1}))
+    out = await call("halopsa_sla_get", sla_id="not-a-number")
+    assert out["error"]["code"] == "invalid_argument"
+    assert not route.called
+
+
 async def test_users_create_refuses_duplicate_email(respx_mock, call):
     search = respx_mock.get(f"{API}/Users").mock(
         return_value=httpx.Response(
