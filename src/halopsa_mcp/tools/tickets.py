@@ -33,6 +33,7 @@ from ._common import (
     run,
     seg,
     slim,
+    window,
 )
 
 MAX_TICKET_PAGE = 100
@@ -52,8 +53,17 @@ ACTION_FIELDS = (
     "important",
     "new_status",
 )
+LIST_ACTIONS_FIELDS = ACTION_FIELDS + (
+    "who_type",
+    "who_agentid",
+    "note_html",
+    "old_status",
+    "attachment_count",
+    "replied_to_action_id",
+)
 DEFAULT_ACTIONS = 20
 MAX_ACTIONS = 100
+DEFAULT_LIST_ACTIONS = DEFAULT_ACTIONS  # same default page size as halopsa_tickets_get's include_actions
 # What a ticket returns by default. Halo's ticket has about 1,000 fields, most of them settings; with
 # its custom field definitions a new ticket is about 70,000 characters.
 TICKET_FIELDS = (
@@ -242,9 +252,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             ticket = _ticket(await client.get(f"/Tickets/{seg(ticket_id)}", {"includedetails": True}), full_response)
             if not include_actions and actions_offset is None:
                 return ticket
-            # /Actions takes only count, so the actions before the offset are read and skipped.
-            payload = await client.get("/Actions", {"ticket_id": seg(ticket_id), "count": start + size + 1})
-            rows = api.rows(payload, "actions")
+            rows, _ = await _fetch_actions(client, ticket_id, {}, size, start)
             actions = rows[start : start + size]
             result: dict[str, Any] = {
                 "ticket": ticket,
@@ -542,6 +550,79 @@ def register(mcp: FastMCP, settings: Settings) -> None:
 
         return await run(settings, handler)
 
+    @mcp.tool(
+        name="halopsa_tickets_list_actions",
+        description=(
+            "List a ticket's actions (notes, replies, system events) with HaloPSA's native filters, with a "
+            "richer field set than halopsa_tickets_get's include_actions path"
+        ),
+        annotations=READ,
+        structured_output=False,
+    )
+    async def halopsa_tickets_list_actions(
+        ticket_id: int,
+        exclude_system: Annotated[
+            bool | None, Field(description="Exclude system-generated events (excludesys).")
+        ] = None,
+        exclude_private: Annotated[
+            bool | None, Field(description="Exclude private/internal notes (excludeprivate).")
+        ] = None,
+        agent_only: Annotated[bool | None, Field(description="Only actions by an agent (agentonly).")] = None,
+        supplier_only: Annotated[bool | None, Field(description="Only actions by a supplier (supplieronly).")] = None,
+        important_only: Annotated[
+            bool | None, Field(description="Only actions flagged important (importantonly).")
+        ] = None,
+        is_child_notes: Annotated[bool | None, Field(description="Only child-ticket notes (ischildnotes).")] = None,
+        include_html_note: Annotated[
+            bool | None, Field(description="Include the HTML note body (includehtmlnote).")
+        ] = None,
+        include_html_email: Annotated[
+            bool | None, Field(description="Include the HTML email body (includehtmlemail).")
+        ] = None,
+        include_attachments: Annotated[
+            bool | None, Field(description="Include attachment info (includeattachments).")
+        ] = None,
+        sla_only: Annotated[bool | None, Field(description="Only SLA-relevant actions (slaonly).")] = None,
+        conversation_only: Annotated[
+            bool | None, Field(description="Only conversation actions (conversationonly).")
+        ] = None,
+        limit: Annotated[
+            int | None, Field(description=f"Actions per page (default {DEFAULT_LIST_ACTIONS}, max {MAX_ACTIONS}).")
+        ] = None,
+        offset: Offset = None,
+        full_response: FullResponse = None,
+    ) -> str:
+        size = cap(limit, DEFAULT_LIST_ACTIONS, MAX_ACTIONS)
+        start = offset or 0
+
+        async def handler(client: api.HaloClient):
+            await _require(client, f"/Tickets/{seg(ticket_id)}", f"No ticket {ticket_id} in HaloPSA.")
+            params = {
+                "excludesys": exclude_system,
+                "excludeprivate": exclude_private,
+                "agentonly": agent_only,
+                "supplieronly": supplier_only,
+                "importantonly": important_only,
+                "ischildnotes": is_child_notes,
+                "includehtmlnote": include_html_note,
+                "includehtmlemail": include_html_email,
+                "includeattachments": include_attachments,
+                "slaonly": sla_only,
+                "conversationonly": conversation_only,
+            }
+            rows, total = await _fetch_actions(client, ticket_id, params, size, start)
+            mapped = rows if full_response else [_action(a, LIST_ACTIONS_FIELDS) for a in rows]
+            # window() treats `mapped` as the whole over-fetched set and slices [start:start+size] itself;
+            # its own total_count (len(mapped)) is the over-fetch cap, not HaloPSA's real total, so it is
+            # replaced with HaloPSA's own record_count when sent, and omitted otherwise.
+            result = window(mapped, size, start)
+            result.pop("total_count", None)
+            if total is not None:
+                result["total_count"] = total
+            return result
+
+        return await run(settings, handler)
+
 
 def _filename(value: str) -> str:
     name = re.split(r"[\\/]", (value or "").strip())[-1].strip()
@@ -606,12 +687,21 @@ def minutes_to_hours(minutes: float) -> float:
     return round(minutes / 60.0, 4)
 
 
-def _action(record: dict[str, Any]) -> dict[str, Any]:
+def _action(record: dict[str, Any], fields: tuple[str, ...] = ACTION_FIELDS) -> dict[str, Any]:
     """An action as returned to agents; ``timetaken`` stays in HaloPSA hours, minutes are added alongside."""
-    out = pick(record, ACTION_FIELDS)
+    out = pick(record, fields)
     if isinstance(out.get("timetaken"), int | float):
         out["time_taken_minutes"] = round(out["timetaken"] * 60, 2)
     return out
+
+
+async def _fetch_actions(
+    client: api.HaloClient, ticket_id: int, params: dict[str, Any], size: int, start: int
+) -> tuple[list[dict[str, Any]], int | None]:
+    """A ticket's actions. /Actions only accepts ``count`` (no true offset), so ``start + size + 1``
+    rows are fetched from the beginning and the ones before ``start`` are sliced off by the caller."""
+    payload = await client.get("/Actions", {"ticket_id": seg(ticket_id), **params, "count": start + size + 1})
+    return api.rows(payload, "actions"), api.record_count(payload)
 
 
 async def _require(client: api.HaloClient, path: str, message: str) -> None:

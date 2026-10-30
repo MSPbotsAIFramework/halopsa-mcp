@@ -150,6 +150,164 @@ async def test_tickets_get_with_actions(respx_mock, call):
     assert out["actions"] == [{"id": 1, "note": "hi"}]
 
 
+# ---- halopsa_tickets_list_actions (PRD-21575) ------------------------------
+
+
+async def test_list_actions_returns_only_this_ticket_with_richer_fields(respx_mock, call):
+    # TC1 (AC1)
+    respx_mock.get(f"{API}/Tickets/456").mock(return_value=httpx.Response(200, json={"id": 456}))
+    respx_mock.get(f"{API}/Actions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "record_count": 1,
+                "actions": [
+                    {
+                        "id": 1,
+                        "ticket_id": 456,
+                        "who": "Jane",
+                        "who_type": 1,
+                        "who_agentid": 7,
+                        "note": "Called back",
+                        "outcome": "Note",
+                        "datetime": "2026-10-28T00:00:00Z",
+                        "new_status": 3,
+                        "old_status": 2,
+                        "hiddenfromuser": False,
+                        "timetaken": 0.5,
+                        "attachment_count": 1,
+                        "replied_to_action_id": None,
+                    }
+                ],
+            },
+        )
+    )
+    out = await call("halopsa_tickets_list_actions", ticket_id=456)
+    assert out["items"] == [
+        {
+            "id": 1,
+            "ticket_id": 456,
+            "who": "Jane",
+            "who_type": 1,
+            "who_agentid": 7,
+            "note": "Called back",
+            "outcome": "Note",
+            "datetime": "2026-10-28T00:00:00Z",
+            "new_status": 3,
+            "old_status": 2,
+            "hiddenfromuser": False,
+            "timetaken": 0.5,
+            "time_taken_minutes": 30.0,
+            "attachment_count": 1,
+            # replied_to_action_id was None -> absent, not null (pick() drops it)
+        }
+    ]
+
+
+async def test_list_actions_zero_actions_is_empty_not_an_error(respx_mock, call):
+    # TC2 (AC2)
+    respx_mock.get(f"{API}/Tickets/789").mock(return_value=httpx.Response(200, json={"id": 789}))
+    respx_mock.get(f"{API}/Actions").mock(return_value=httpx.Response(200, json={"record_count": 0, "actions": []}))
+    out = await call("halopsa_tickets_list_actions", ticket_id=789)
+    assert out["items"] == [] and "error" not in out
+
+
+async def test_list_actions_missing_ticket_short_circuits(respx_mock, call):
+    # TC3 (AC3)
+    respx_mock.get(f"{API}/Tickets/99999999").mock(return_value=httpx.Response(404))
+    actions = respx_mock.get(f"{API}/Actions")
+    out = await call("halopsa_tickets_list_actions", ticket_id=99999999)
+    assert out["error"]["code"] == "not_found" and "99999999" in out["error"]["message"]
+    assert not actions.called
+
+
+async def test_list_actions_sends_only_the_set_filters(respx_mock, call):
+    # TC4 (AC4)
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    route = respx_mock.get(f"{API}/Actions").mock(return_value=httpx.Response(200, json={"actions": []}))
+    await call("halopsa_tickets_list_actions", ticket_id=5, exclude_system=True, important_only=True)
+    p = route.calls.last.request.url.params
+    assert p["excludesys"] == "true" and p["importantonly"] == "true"
+    for key in (
+        "excludeprivate",
+        "agentonly",
+        "supplieronly",
+        "ischildnotes",
+        "includehtmlnote",
+        "includehtmlemail",
+        "includeattachments",
+        "slaonly",
+        "conversationonly",
+    ):
+        assert key not in p
+
+
+async def test_list_actions_sends_no_filters_when_none_set(respx_mock, call):
+    # TC5 (AC4)
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    route = respx_mock.get(f"{API}/Actions").mock(return_value=httpx.Response(200, json={"actions": []}))
+    await call("halopsa_tickets_list_actions", ticket_id=5)
+    p = route.calls.last.request.url.params
+    assert set(p.keys()) == {"ticket_id", "count"}
+
+
+async def test_list_actions_pages_by_offset(respx_mock, call):
+    # TC7 (AC6)
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    all_actions = [{"id": i, "ticket_id": 5} for i in range(25)]
+
+    def reply(request):
+        count = int(request.url.params["count"])
+        return httpx.Response(200, json={"record_count": 25, "actions": all_actions[:count]})
+
+    respx_mock.get(f"{API}/Actions").mock(side_effect=reply)
+
+    out = await call("halopsa_tickets_list_actions", ticket_id=5, limit=20)
+    assert [a["id"] for a in out["items"]] == list(range(20))
+    assert out["has_more"] is True and out["next_offset"] == 20
+
+    out = await call("halopsa_tickets_list_actions", ticket_id=5, limit=20, offset=20)
+    assert [a["id"] for a in out["items"]] == list(range(20, 25))
+    assert out["has_more"] is False and "next_offset" not in out
+
+
+async def test_list_actions_not_configured_without_credentials(call):
+    # TC8 (AC7)
+    from halopsa_mcp import credentials
+
+    token = credentials._current.set(None)
+    try:
+        out = await call("halopsa_tickets_list_actions", ticket_id=5)
+    finally:
+        credentials._current.reset(token)
+    assert out["error"]["code"] == "not_configured"
+
+
+async def test_list_actions_rejects_non_numeric_ticket_id(call):
+    # TC9 (AC1, edge)
+    out = await call("halopsa_tickets_list_actions", ticket_id="abc")
+    assert out["error"]["code"] == "invalid_argument"
+
+
+async def test_list_actions_full_response_is_unslimmed(respx_mock, call):
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    respx_mock.get(f"{API}/Actions").mock(
+        return_value=httpx.Response(200, json={"actions": [{"id": 1, "who_colour": "red"}]})
+    )
+    out = await call("halopsa_tickets_list_actions", ticket_id=5, full_response=True)
+    assert out["items"] == [{"id": 1, "who_colour": "red"}]
+
+
+async def test_list_actions_does_not_change_tickets_get_include_actions(respx_mock, call):
+    # Non-goal: halopsa_tickets_get's include_actions path keeps its own (narrower) field set.
+    respx_mock.get(f"{API}/Tickets/5").mock(return_value=httpx.Response(200, json={"id": 5}))
+    respx_mock.get(f"{API}/Actions").mock(
+        return_value=httpx.Response(200, json={"actions": [{"id": 1, "note": "hi", "who_type": 1, "old_status": 2}]})
+    )
+    out = await call("halopsa_tickets_get", ticket_id=5, include_actions=True)
+    assert out["actions"] == [{"id": 1, "note": "hi"}]
+
+
 async def test_tickets_create_maps_agent_and_team(respx_mock, call):
     respx_mock.get(f"{API}/Client/3").mock(return_value=httpx.Response(200, json={"id": 3}))
     respx_mock.get(f"{API}/Users/133").mock(return_value=httpx.Response(200, json={"id": 133}))
