@@ -1,0 +1,62 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given client 3 and contact 133 both exist in HaloPSA, When halopsa_tickets_create is called with summary, client_id=3, tickettype_id=1, user_id=133, Then POST /Tickets is sent with user_id: 133 in its body and the tool returns the created ticket.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team (planned: extend with user_id=133 and assert it in the posted body, mirroring the existing halo_agent_id/team_id assertions at tests/test_handlers.py:153-177)"
+    ]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given user_id is not passed, When halopsa_tickets_create is called with only the required fields (summary, client_id, tickettype_id), Then the posted body has no user_id key -- unchanged from today's behavior.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_tickets_create_without_contact_omits_user_id (planned, new test)"
+    ]
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given user_id=99999999 does not correspond to any HaloPSA contact, When halopsa_tickets_create is called with that id, Then the tool returns a not_found error naming contact 99999999, and no POST /Tickets call is made.",
+    "type": "auto",
+    "tests": [
+      "tests/test_records.py::test_tickets_create_for_a_missing_contact_is_not_found_and_writes_nothing (planned, new test mirroring tests/test_records.py:215-219's missing-client case with a /Users/<id> 404 instead of /Client/<id>)"
+    ]
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given user_id, halo_agent_id, team_id and category_1 are all passed together, When halopsa_tickets_create is called, Then the posted body contains user_id, agent_id, team_id+team, and category_1 all set correctly, none overriding another.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team (planned: same extended test as TC1 already exercises halo_agent_id+team_id+category_1 together, tests/test_handlers.py:153-177)"
+    ]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given the live tools/list output after this change, When compared against tests/fixtures/tools_baseline.json by the existing contract-test suite, Then halopsa_tickets_create still has all of its baseline parameters, none of them became required, and no tool uses the reserved name agent_id.",
+    "type": "auto",
+    "tests": [
+      "tests/test_tools.py::test_parameters_are_backward_compatible (existing)",
+      "tests/test_tools.py::test_no_agent_id_parameter (existing)"
+    ]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC1",
+    "text": "Given a user_id was set on ticket creation (TC1), When halopsa_tickets_get is called for that ticket, Then the returned ticket's user_id still equals the id passed at creation -- confirms the contact round-trips through a read, not just the create response.",
+    "type": "manual",
+    "steps": [
+      "With a real HaloPSA sandbox/test tenant (needs a real vendor account -- not available in this environment, per mcp-track.md 2.5 this does not block design or dev), call halopsa_users_search for a known contact and note its id",
+      "Call halopsa_tickets_create with that id as user_id, plus a valid client_id and tickettype_id",
+      "Call halopsa_tickets_get for the returned ticket id"
+    ],
+    "expect": "The ticket returned by halopsa_tickets_get shows user_id equal to the id passed at creation, and (if HaloPSA fills them) user_name/user_email for that same contact.",
+    "result": "untested",
+    "evidence": "needs a real vendor account; not executed in this environment. Tracked in the design doc's Open questions / Test strategy as the one assumption (bare user_id is sufficient on write) that is not independently verified against a live tenant."
+  }
+]
