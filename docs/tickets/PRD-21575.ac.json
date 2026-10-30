@@ -1,0 +1,79 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given ticket 456 has at least one action, When halopsa_tickets_list_actions(ticket_id=456) is called with no filters, Then the response's items contains only actions for ticket 456, each with id, who, who_type, who_agentid, note, outcome, datetime, new_status, old_status, hiddenfromuser, timetaken, time_taken_minutes, attachment_count, replied_to_action_id present when HaloPSA sent them.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given ticket 789 exists and has zero actions, When the tool is called for ticket 789, Then items is an empty list and no error is returned.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given ticket_id=99999999 does not exist in HaloPSA, When the tool is called with that id, Then the tool returns a not_found error naming ticket 99999999, and no call to /Actions is made.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given exclude_system=true and important_only=true are both passed, When the tool is called, Then the outgoing GET /Actions request includes both excludesys=true and importantonly=true, and no other filter query parameter is present.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC5",
+    "ac": "AC4",
+    "text": "Given no optional filters are passed, When the tool is called, Then the outgoing GET /Actions request has none of the 11 filter query parameters set (only ticket_id and count).",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC6",
+    "ac": "AC5",
+    "text": "Given a ticket with an HTML-formatted note, When the tool is called with include_html_note=true against a live HaloPSA tenant, Then the matching action's note_html is present and non-empty in the response.",
+    "type": "manual",
+    "steps": [
+      "With a real HaloPSA sandbox/test tenant (needs a real vendor account -- not available in this environment, per mcp-track.md 2.5 this does not block design or dev), find or create a ticket with an action that has an HTML-formatted note",
+      "Call halopsa_tickets_list_actions with that ticket_id and include_html_note=true",
+      "Inspect the matching action in the response"
+    ],
+    "expect": "The action's note_html field is present and non-empty, and reflects the HTML content of the note.",
+    "result": "untested",
+    "evidence": "needs a real vendor account; not executed in this environment, per mcp-track.md 2.5/'completion standard' item 3 this does not block dev or INT publish."
+  },
+  {
+    "id": "TC7",
+    "ac": "AC6",
+    "text": "Given a ticket with 25 actions and limit=20, When the tool is called with no offset, Then items has 20 entries, has_more is true, and next_offset is 20; calling again with offset=20 returns the remaining 5 entries with has_more false.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC8",
+    "ac": "AC7",
+    "text": "Given no HaloPSA credential headers are sent, When the tool is called, Then it returns the not_configured error envelope, matching every other tool's behavior for the same condition.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC9",
+    "ac": "AC1",
+    "text": "Given ticket_id is passed as a non-numeric value (e.g. \"abc\"), When the tool is called, Then it returns the invalid_argument error envelope rather than forwarding a malformed request to HaloPSA.",
+    "type": "auto",
+    "tests": []
+  },
+  {
+    "id": "TC10",
+    "ac": "AC8",
+    "text": "Given the live tools/list output after this change, When compared against tests/fixtures/tools_baseline.json by the existing contract-test suite, Then every existing tool still has all of its baseline parameters with none newly required, no tool is renamed, and halopsa_tickets_list_actions appears with ticket_id as its only required parameter.",
+    "type": "auto",
+    "tests": []
+  }
+]
