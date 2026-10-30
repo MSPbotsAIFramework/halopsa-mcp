@@ -1,0 +1,62 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given ticket 5 exists in HaloPSA, When halopsa_tickets_add_attachment is called with ticket_id=5, filename=\"report.csv\", content=<base64 of a CSV>, Then POST /Attachment is sent with the decoded CSV as data_base64, ticket_id 5 and filename \"report.csv\", and the tool returns an attachment_id.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_add_attachment_base64_round_trips"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected (fresh checkout of dev/PRD-21576 @ main 4db11dc); test asserts the round-trip as described."
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given the Rewst flow wants the file visible to the end user (showforusers: true), When halopsa_tickets_add_attachment is called with hidden_from_user=False, Then the request sent to HaloPSA has showforusers: true.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_add_attachment_visible_to_user"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; test asserts showforusers: true is sent when hidden_from_user=False."
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given ticket_id does not exist in HaloPSA (GET /Tickets/{id} returns 404), When halopsa_tickets_add_attachment is called, Then it returns a not_found error and POST /Attachment is never called.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_add_attachment_missing_ticket"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; test asserts not_found error and that POST /Attachment is never called."
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given the file content is not valid base64, or is larger than 10 MB after decoding, When halopsa_tickets_add_attachment is called, Then it returns an invalid_argument error and POST /Attachment is never called.",
+    "type": "auto",
+    "tests": [
+      "tests/test_handlers.py::test_add_attachment_invalid_base64",
+      "tests/test_handlers.py::test_add_attachment_size_limit"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; both tests assert invalid_argument and that POST /Attachment is never called."
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given the exact field set the four Ginko IT Rewst flows cited in this ticket use (ticket_id, filename, data, showforusers -- no desc, type, action_id, user_id/agent_id), When each field is matched against halopsa_tickets_add_attachment's parameters, Then every field used by those flows has a direct, working equivalent in the current tool and no new parameter is required.",
+    "type": "manual",
+    "steps": [
+      "List the distinct field names used across the 4 Rewst flows cited in the ticket's own call example (json_body: [{\"ticket_id\": ..., \"filename\": ..., \"data\": ..., \"showforusers\": true}]).",
+      "For each field, find its equivalent parameter on halopsa_tickets_add_attachment in src/halopsa_mcp/tools/tickets.py:465-543 (ticket_id -> ticket_id; filename -> filename; data -> content with content_encoding=\"base64\"; showforusers -> hidden_from_user, inverted).",
+      "Confirm the ticket's example payload names no other field (desc, type, action_id, user_id, agent_id) -- it does not.",
+      "Re-run the full suite (uv run pytest -q) against the checkout used and confirm it still passes, since no code is expected to change."
+    ],
+    "expect": "All 4 fields used by the cited Rewst flows map to an existing tool parameter; no field used by those flows lacks an equivalent; the full test suite still passes with no code changes.",
+    "result": "pass",
+    "evidence": "Live tools/list probe against a locally running server (placeholder credential headers) returned halopsa_tickets_add_attachment.inputSchema.properties = [ticket_id, filename, content, content_encoding, content_type, note, hidden_from_user]; all 4 cited fields map directly (ticket_id, filename, content+content_encoding=base64, hidden_from_user inverted). uv run pytest -q -> 127 passed, 1 warning (fresh checkout of dev/PRD-21576 @ main 4db11dc); no code changes were made."
+  }
+]
