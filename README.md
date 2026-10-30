@@ -107,7 +107,7 @@ attachments, clients and contacts).
 | Area | Tools |
 |---|---|
 | Discovery | `halopsa_navigate`, `halopsa_status` |
-| Tickets | `halopsa_tickets_list`, `halopsa_tickets_get`, `halopsa_tickets_create`, `halopsa_tickets_update`, `halopsa_tickets_add_action`, `halopsa_tickets_add_attachment` |
+| Tickets | `halopsa_tickets_list`, `halopsa_tickets_get`, `halopsa_tickets_create`, `halopsa_tickets_update`, `halopsa_tickets_add_action`, `halopsa_tickets_add_attachment`, `halopsa_tickets_list_actions` |
 | Clients | `halopsa_clients_list`, `halopsa_clients_get`, `halopsa_clients_create`, `halopsa_clients_search` |
 | Assets | `halopsa_assets_list`, `halopsa_assets_get`, `halopsa_assets_search`, `halopsa_assets_list_types` |
 | Agents and teams | `halopsa_agents_list`, `halopsa_agents_get`, `halopsa_teams_list` |
@@ -143,6 +143,13 @@ Behaviour notes:
   value, unless `full_response` is true. With `include_actions`, actions are paged with
   `actions_limit` / `actions_offset` (`next_actions_offset`). `halopsa_users_get` returns the contact
   the same way; the other get tools drop empty values and "no date" dates.
+- `halopsa_tickets_list_actions` lists a ticket's actions with HaloPSA's own `/Actions` filters
+  (exclude system events, exclude private notes, agent/supplier/important/child-notes-only, include
+  HTML note/email body, include attachment info, SLA-only, conversation-only) passed through only when
+  set. It returns a richer field set than `include_actions` above (also `who_type`, `who_agentid`,
+  `note_html`, `old_status`, `attachment_count`, `replied_to_action_id`) in the standard list envelope
+  (`items`/`offset`/`has_more`/`next_offset`), and fails with `not_found` if the ticket does not exist
+  rather than returning an empty list.
 - `halopsa_clients_create`: HaloPSA has no phone or email on a client. `phonenumber` is saved on the
   main site and `email` on the client's main contact (`contact_name`, default "Main Contact"; HaloPSA creates it with
   the client, otherwise it is added as a contact of the main site; no welcome email is sent); the result shows `main_phonenumber` / `main_contact_email` as HaloPSA stored them, with a

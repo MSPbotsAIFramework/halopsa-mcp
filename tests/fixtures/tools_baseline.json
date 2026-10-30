@@ -738,5 +738,76 @@
     "content"
    ]
   }
+ },
+ {
+  "name": "halopsa_tickets_list_actions",
+  "description": "List a ticket's actions (notes, replies, system events) with HaloPSA's native filters, with a richer field set than halopsa_tickets_get's include_actions path",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "number"
+    },
+    "exclude_system": {
+     "type": "boolean",
+     "description": "Exclude system-generated events (excludesys)."
+    },
+    "exclude_private": {
+     "type": "boolean",
+     "description": "Exclude private/internal notes (excludeprivate)."
+    },
+    "agent_only": {
+     "type": "boolean",
+     "description": "Only actions by an agent (agentonly)."
+    },
+    "supplier_only": {
+     "type": "boolean",
+     "description": "Only actions by a supplier (supplieronly)."
+    },
+    "important_only": {
+     "type": "boolean",
+     "description": "Only actions flagged important (importantonly)."
+    },
+    "is_child_notes": {
+     "type": "boolean",
+     "description": "Only child-ticket notes (ischildnotes)."
+    },
+    "include_html_note": {
+     "type": "boolean",
+     "description": "Include the HTML note body (includehtmlnote)."
+    },
+    "include_html_email": {
+     "type": "boolean",
+     "description": "Include the HTML email body (includehtmlemail)."
+    },
+    "include_attachments": {
+     "type": "boolean",
+     "description": "Include attachment info (includeattachments)."
+    },
+    "sla_only": {
+     "type": "boolean",
+     "description": "Only SLA-relevant actions (slaonly)."
+    },
+    "conversation_only": {
+     "type": "boolean",
+     "description": "Only conversation actions (conversationonly)."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Actions per page (default 20, max 100)."
+    },
+    "offset": {
+     "type": "number",
+     "description": "Record position to start from (0-based). Pass next_offset from the previous result."
+    },
+    "full_response": {
+     "type": "boolean",
+     "description": "Return the ticket exactly as HaloPSA sends it, with related records (ticket type, priority, user) expanded in full. Off by default: that reply can be very large, mostly the ticket type definition."
+    }
+   },
+   "required": [
+    "ticket_id"
+   ]
+  }
  }
 ]
