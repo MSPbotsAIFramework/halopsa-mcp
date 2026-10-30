@@ -585,6 +585,21 @@
   }
  },
  {
+  "name": "halopsa_sla_get",
+  "description": "Get an SLA's details by ID, including its priority list (id, name, response time, fix time, colour). Use it to resolve a priority name to the id halopsa_tickets_create/_update expect.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "sla_id": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "sla_id"
+   ]
+  }
+ },
+ {
   "name": "halopsa_users_search",
   "description": "Search contacts by name or email",
   "inputSchema": {

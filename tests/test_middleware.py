@@ -47,7 +47,7 @@ def test_placeholder_values_are_accepted(client):
     # The platform probes with placeholders; no format validation in middleware.
     r = client.post("/mcp", json=LIST, headers={**HEADERS, **PROBE})
     assert r.status_code == 200
-    assert len(r.json()["result"]["tools"]) == 28
+    assert len(r.json()["result"]["tools"]) == 29
 
 
 @pytest.mark.parametrize("location", ["x-halo-tenant", "x-halo-base-url"])

@@ -45,9 +45,10 @@ DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
         ("halopsa_invoices_list", "halopsa_invoices_get"),
     ),
     "lookups": (
-        "Reference data - read the tenant's ticket statuses, priorities, ticket types and Category 1-4 values, "
-        "so ids and category strings are resolved live instead of hardcoded",
-        ("halopsa_lookups_get",),
+        "Reference data - read the tenant's ticket statuses, priorities, ticket types, Category 1-4 values and "
+        "SLA details (including an SLA's priority list), so ids and category strings are resolved live instead "
+        "of hardcoded",
+        ("halopsa_lookups_get", "halopsa_sla_get"),
     ),
     "users": (
         "Contact management - search, get, create (with duplicate-prevention by email) and update "
