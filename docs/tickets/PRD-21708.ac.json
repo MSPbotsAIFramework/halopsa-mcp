@@ -5,8 +5,10 @@
     "text": "Given client 3 and contact 133 both exist in HaloPSA, When halopsa_tickets_create is called with summary, client_id=3, tickettype_id=1, user_id=133, Then POST /Tickets is sent with user_id: 133 in its body and the tool returns the created ticket.",
     "type": "auto",
     "tests": [
-      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team (planned: extend with user_id=133 and assert it in the posted body, mirroring the existing halo_agent_id/team_id assertions at tests/test_handlers.py:153-177)"
-    ]
+      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ 797e97b: 127 passed, 0 failed. test_tickets_create_maps_agent_and_team extended to call halopsa_tickets_create with user_id=133 alongside halo_agent_id/team_id/category_1 and asserts sent(route) == [{..., \"user_id\": 133, ...}] (tests/test_handlers.py)."
   },
   {
     "id": "TC2",
@@ -14,8 +16,10 @@
     "text": "Given user_id is not passed, When halopsa_tickets_create is called with only the required fields (summary, client_id, tickettype_id), Then the posted body has no user_id key -- unchanged from today's behavior.",
     "type": "auto",
     "tests": [
-      "tests/test_handlers.py::test_tickets_create_without_contact_omits_user_id (planned, new test)"
-    ]
+      "tests/test_handlers.py::test_tickets_create_without_contact_omits_user_id"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ 797e97b: 127 passed. New test asserts sent(route) == [{\"summary\": \"S\", \"client_id\": 3, \"tickettype_id\": 1}] -- no user_id key -- when the call omits user_id (tests/test_handlers.py)."
   },
   {
     "id": "TC3",
@@ -23,8 +27,10 @@
     "text": "Given user_id=99999999 does not correspond to any HaloPSA contact, When halopsa_tickets_create is called with that id, Then the tool returns a not_found error naming contact 99999999, and no POST /Tickets call is made.",
     "type": "auto",
     "tests": [
-      "tests/test_records.py::test_tickets_create_for_a_missing_contact_is_not_found_and_writes_nothing (planned, new test mirroring tests/test_records.py:215-219's missing-client case with a /Users/<id> 404 instead of /Client/<id>)"
-    ]
+      "tests/test_records.py::test_tickets_create_for_a_missing_contact_is_not_found_and_writes_nothing"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ 797e97b: 127 passed. New test mocks GET /Users/99999999 -> 404, asserts out[\"error\"][\"code\"] == \"not_found\" and \"No contact 99999999\" in message, and that the /Tickets POST route was never called (tests/test_records.py)."
   },
   {
     "id": "TC4",
@@ -32,8 +38,10 @@
     "text": "Given user_id, halo_agent_id, team_id and category_1 are all passed together, When halopsa_tickets_create is called, Then the posted body contains user_id, agent_id, team_id+team, and category_1 all set correctly, none overriding another.",
     "type": "auto",
     "tests": [
-      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team (planned: same extended test as TC1 already exercises halo_agent_id+team_id+category_1 together, tests/test_handlers.py:153-177)"
-    ]
+      "tests/test_handlers.py::test_tickets_create_maps_agent_and_team"
+    ],
+    "result": "pass",
+    "evidence": "Same run and assertion as TC1: sent(route) == [{\"summary\": \"S\", \"client_id\": 3, \"tickettype_id\": 1, \"agent_id\": 7, \"user_id\": 133, \"category_1\": \"Hardware>Laptop\", \"team_id\": 4, \"team\": \"Service Desk\"}] -- all four fields present together, none overriding another (tests/test_handlers.py @ 797e97b)."
   },
   {
     "id": "TC5",
@@ -41,9 +49,11 @@
     "text": "Given the live tools/list output after this change, When compared against tests/fixtures/tools_baseline.json by the existing contract-test suite, Then halopsa_tickets_create still has all of its baseline parameters, none of them became required, and no tool uses the reserved name agent_id.",
     "type": "auto",
     "tests": [
-      "tests/test_tools.py::test_parameters_are_backward_compatible (existing)",
-      "tests/test_tools.py::test_no_agent_id_parameter (existing)"
-    ]
+      "tests/test_tools.py::test_parameters_are_backward_compatible",
+      "tests/test_tools.py::test_no_agent_id_parameter"
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q @ 797e97b: both existing tests pass unmodified against the live tools/list (no fixture change needed -- user_id is additive and optional). Also manually confirmed via local smoke test: POST /mcp tools/list with placeholder headers returns 27 tools; halopsa_tickets_create's inputSchema.properties includes all baseline keys plus user_id, and required == [\"summary\", \"client_id\", \"tickettype_id\"] (unchanged)."
   },
   {
     "id": "TC6",
@@ -57,6 +67,6 @@
     ],
     "expect": "The ticket returned by halopsa_tickets_get shows user_id equal to the id passed at creation, and (if HaloPSA fills them) user_name/user_email for that same contact.",
     "result": "untested",
-    "evidence": "needs a real vendor account; not executed in this environment. Tracked in the design doc's Open questions / Test strategy as the one assumption (bare user_id is sufficient on write) that is not independently verified against a live tenant."
+    "evidence": "needs a real vendor account; not executed in this environment, per mcp-track.md 2.5/'completion standard' item 3 this does not block dev or INT publish. Unit coverage (TC1/TC4) proves user_id reaches the POST /Tickets body; the live round-trip through HaloPSA's own storage and halopsa_tickets_get is the one assumption flagged in the design doc's Open questions / Test strategy as not independently verified against a live tenant."
   }
 ]
