@@ -6,7 +6,9 @@
     "type": "auto",
     "tests": [
       "tests/test_handlers.py::test_add_attachment_base64_round_trips"
-    ]
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected (fresh checkout of dev/PRD-21576 @ main 4db11dc); test asserts the round-trip as described."
   },
   {
     "id": "TC2",
@@ -15,7 +17,9 @@
     "type": "auto",
     "tests": [
       "tests/test_handlers.py::test_add_attachment_visible_to_user"
-    ]
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; test asserts showforusers: true is sent when hidden_from_user=False."
   },
   {
     "id": "TC3",
@@ -24,7 +28,9 @@
     "type": "auto",
     "tests": [
       "tests/test_handlers.py::test_add_attachment_missing_ticket"
-    ]
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; test asserts not_found error and that POST /Attachment is never called."
   },
   {
     "id": "TC4",
@@ -34,7 +40,9 @@
     "tests": [
       "tests/test_handlers.py::test_add_attachment_invalid_base64",
       "tests/test_handlers.py::test_add_attachment_size_limit"
-    ]
+    ],
+    "result": "pass",
+    "evidence": "uv run pytest -q -k attachment -> 13 passed, 114 deselected; both tests assert invalid_argument and that POST /Attachment is never called."
   },
   {
     "id": "TC5",
@@ -47,6 +55,8 @@
       "Confirm the ticket's example payload names no other field (desc, type, action_id, user_id, agent_id) -- it does not.",
       "Re-run the full suite (uv run pytest -q) against the checkout used and confirm it still passes, since no code is expected to change."
     ],
-    "expect": "All 4 fields used by the cited Rewst flows map to an existing tool parameter; no field used by those flows lacks an equivalent; the full test suite still passes with no code changes."
+    "expect": "All 4 fields used by the cited Rewst flows map to an existing tool parameter; no field used by those flows lacks an equivalent; the full test suite still passes with no code changes.",
+    "result": "pass",
+    "evidence": "Live tools/list probe against a locally running server (placeholder credential headers) returned halopsa_tickets_add_attachment.inputSchema.properties = [ticket_id, filename, content, content_encoding, content_type, note, hidden_from_user]; all 4 cited fields map directly (ticket_id, filename, content+content_encoding=base64, hidden_from_user inverted). uv run pytest -q -> 127 passed, 1 warning (fresh checkout of dev/PRD-21576 @ main 4db11dc); no code changes were made."
   }
 ]
