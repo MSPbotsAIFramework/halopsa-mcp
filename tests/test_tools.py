@@ -64,7 +64,10 @@ async def test_descriptions_are_concise(mcp):
 async def test_annotations(mcp):
     tools = await _tools(mcp)
     for name, tool in tools.items():
-        is_read = any(name.endswith(s) for s in ("_list", "_get", "_search", "_list_types", "_status", "_navigate"))
+        is_read = any(
+            name.endswith(s)
+            for s in ("_list", "_get", "_search", "_list_types", "_list_actions", "_status", "_navigate")
+        )
         assert tool.annotations.readOnlyHint is is_read, name
         assert tool.annotations.destructiveHint is False, name  # no delete tools
 

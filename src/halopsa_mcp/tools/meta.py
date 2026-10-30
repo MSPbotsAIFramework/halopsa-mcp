@@ -25,6 +25,7 @@ DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
             "halopsa_tickets_update",
             "halopsa_tickets_add_action",
             "halopsa_tickets_add_attachment",
+            "halopsa_tickets_list_actions",
         ),
     ),
     "clients": (
