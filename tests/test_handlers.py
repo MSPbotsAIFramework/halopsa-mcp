@@ -152,6 +152,7 @@ async def test_tickets_get_with_actions(respx_mock, call):
 
 async def test_tickets_create_maps_agent_and_team(respx_mock, call):
     respx_mock.get(f"{API}/Client/3").mock(return_value=httpx.Response(200, json={"id": 3}))
+    respx_mock.get(f"{API}/Users/133").mock(return_value=httpx.Response(200, json={"id": 133}))
     respx_mock.get(f"{API}/Team/4").mock(return_value=httpx.Response(200, json={"id": 4, "name": "Service Desk"}))
     route = respx_mock.post(f"{API}/Tickets").mock(return_value=httpx.Response(201, json={"id": 9, "summary": "S"}))
     out = await call(
@@ -160,6 +161,7 @@ async def test_tickets_create_maps_agent_and_team(respx_mock, call):
         client_id=3,
         tickettype_id=1,
         halo_agent_id=7,
+        user_id=133,
         team_id=4,
         category_1="Hardware>Laptop",
     )
@@ -169,12 +171,21 @@ async def test_tickets_create_maps_agent_and_team(respx_mock, call):
             "client_id": 3,
             "tickettype_id": 1,
             "agent_id": 7,
+            "user_id": 133,
             "category_1": "Hardware>Laptop",
             "team_id": 4,
             "team": "Service Desk",
         }
     ]
     assert out["id"] == 9
+
+
+async def test_tickets_create_without_contact_omits_user_id(respx_mock, call):
+    respx_mock.get(f"{API}/Client/3").mock(return_value=httpx.Response(200, json={"id": 3}))
+    route = respx_mock.post(f"{API}/Tickets").mock(return_value=httpx.Response(201, json={"id": 10, "summary": "S"}))
+    out = await call("halopsa_tickets_create", summary="S", client_id=3, tickettype_id=1)
+    assert sent(route) == [{"summary": "S", "client_id": 3, "tickettype_id": 1}]
+    assert out["id"] == 10
 
 
 async def test_tickets_update_team_and_custom_fields(respx_mock, call):

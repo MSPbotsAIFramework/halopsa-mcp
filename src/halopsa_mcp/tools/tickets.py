@@ -122,6 +122,12 @@ Category2 = Annotated[str | None, Field(description=_category_desc(2))]
 Category3 = Annotated[str | None, Field(description=_category_desc(3))]
 Category4 = Annotated[str | None, Field(description=_category_desc(4))]
 AgentId = Annotated[int | None, Field(description=HALO_AGENT_ID_DESC)]
+CONTACT_ID_DESC = (
+    "HaloPSA contact id to set as the ticket's requester (HaloPSA calls this field user_id on a "
+    "ticket), as returned by halopsa_users_search or halopsa_users_get as `id`. Distinct from "
+    "client_id (the company) and halo_agent_id (the HaloPSA staff member handling the ticket)."
+)
+ContactId = Annotated[int | None, Field(description=CONTACT_ID_DESC)]
 
 
 class CustomField(BaseModel):
@@ -266,6 +272,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         priority_id: int | None = None,
         halo_agent_id: AgentId = None,
         site_id: int | None = None,
+        user_id: ContactId = None,
         category_1: Category1 = None,
         category_2: Category2 = None,
         category_3: Category3 = None,
@@ -277,6 +284,8 @@ def register(mcp: FastMCP, settings: Settings) -> None:
             if not summary.strip():
                 raise ToolInputError("summary must not be empty.")
             await _require(client, f"/Client/{seg(client_id)}", f"No client {client_id} in HaloPSA.")
+            if user_id is not None:
+                await _require(client, f"/Users/{seg(user_id)}", f"No contact {user_id} in HaloPSA.")
             body: dict[str, Any] = {
                 "summary": summary,
                 "details": details,
@@ -285,6 +294,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 "priority_id": priority_id,
                 "agent_id": halo_agent_id,
                 "site_id": site_id,
+                "user_id": user_id,
                 **_categories(
                     {
                         "category_1": category_1,

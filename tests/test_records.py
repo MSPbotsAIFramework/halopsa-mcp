@@ -220,6 +220,15 @@ async def test_tickets_create_for_a_missing_client_is_not_found_and_writes_nothi
     assert not post.called
 
 
+async def test_tickets_create_for_a_missing_contact_is_not_found_and_writes_nothing(respx_mock, call):
+    respx_mock.get(f"{API}/Client/3").mock(return_value=httpx.Response(200, json={"id": 3}))
+    respx_mock.get(f"{API}/Users/99999999").mock(return_value=httpx.Response(404, text="Not found"))
+    post = respx_mock.post(f"{API}/Tickets")
+    out = await call("halopsa_tickets_create", summary="x", client_id=3, tickettype_id=1, user_id=99999999)
+    assert out["error"]["code"] == "not_found" and "No contact 99999999" in out["error"]["message"]
+    assert not post.called
+
+
 async def test_bad_argument_types_use_the_envelope(call):
     for tool, args in (("halopsa_tickets_get", {"ticket_id": "abc"}), ("halopsa_lookups_get", {"kinds": ["bogus"]})):
         error = (await call(tool, **args))["error"]
