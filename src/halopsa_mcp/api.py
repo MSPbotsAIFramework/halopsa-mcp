@@ -112,14 +112,18 @@ class HaloClient:
     async def __aexit__(self, *exc: object) -> None:
         await self._http.aclose()
 
-    async def _send(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        """Send with retries on 429/5xx/timeouts, honouring Retry-After and the per-call budget."""
+    async def _send(self, method: str, url: str, *, idempotent: bool = True, **kwargs: Any) -> httpx.Response:
+        """Send with retries on 429/5xx/timeouts, honouring Retry-After and the per-call budget.
+
+        A non-idempotent write is retried only on 429: after a 5xx or a timeout HaloPSA may already have
+        saved it, and sending it again would create a duplicate.
+        """
         attempt = 0
         while True:
             try:
                 response = await self._http.request(method, url, **kwargs)
             except httpx.TimeoutException as exc:
-                if attempt < self._settings.max_retries and time.monotonic() + 1 < self._deadline:
+                if idempotent and attempt < self._settings.max_retries and time.monotonic() + 1 < self._deadline:
                     attempt += 1
                     await asyncio.sleep(min(2.0**attempt, MAX_BACKOFF))
                     continue
@@ -127,7 +131,8 @@ class HaloClient:
             except httpx.HTTPError as exc:
                 raise ApiError("upstream_error", f"Could not reach HaloPSA: {type(exc).__name__}.", True) from exc
 
-            if response.status_code in RETRY_STATUSES and attempt < self._settings.max_retries:
+            retry = response.status_code in RETRY_STATUSES if idempotent else response.status_code == 429
+            if retry and attempt < self._settings.max_retries:
                 wait = _retry_after(response, attempt + 1)
                 if time.monotonic() + wait < self._deadline:
                     attempt += 1
@@ -192,6 +197,7 @@ class HaloClient:
             params=clean,
             json=body,
             headers={"Authorization": f"Bearer {token}"},
+            idempotent=method in ("GET", "HEAD"),
         )
         if response.status_code >= 400:
             raise _status_to_error(response.status_code, error_detail(response))
