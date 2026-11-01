@@ -165,8 +165,9 @@ Behaviour notes:
   4 places (11 minutes -> 0.1833). Returned actions keep HaloPSA's `timetaken` in hours and add
   `time_taken_minutes`.
 - `halopsa_tickets_add_attachment` uploads one file to a ticket with `POST /Attachment`
-  (`data_base64`). `content` is base64 (a `data:<type>;base64,` prefix is accepted) or, with
-  `content_encoding: "text"`, the text itself, sent as UTF-8. Files over 10 MB after decoding and
+  (`data_base64`, sent as the data URL `data:<type>;base64,...` HaloPSA requires). `content` is
+  base64 (a `data:<type>;base64,` prefix is accepted) or, with `content_encoding: "text"`, the text
+  itself, sent as UTF-8. Files over 10 MB after decoding and
   invalid base64 return `invalid_argument`. `content_type` defaults to the type of the file extension.
   With `note`, a note action is added first and the file is linked to it (`action_id`).
   `hidden_from_user` (default true) sets the note's `hiddenfromuser` and the attachment's

@@ -11,6 +11,7 @@ import binascii
 import mimetypes
 import re
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -41,6 +42,14 @@ MAX_TICKET_PAGE = 100
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENT_MB = MAX_ATTACHMENT_BYTES // (1024 * 1024)
 _DATA_URL = re.compile(r"^data:([^;,]*)(?:;[^,]*)?;base64,", re.IGNORECASE)
+_REPORT_TYPES = {
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".txt": "text/plain",
+    ".json": "application/json",
+    ".pdf": "application/pdf",
+}
 ACTION_FIELDS = (
     "id",
     "ticket_id",
@@ -521,12 +530,12 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 action_id = api.first(saved).get("id")
                 if action_id is not None:
                     result["action_id"] = action_id
+            # HaloPSA's Attachment schema has no content type field: the type travels in data_base64,
+            # which must be a data URL ("data:mimetype;base64,..."). Plain base64 is answered with a 500.
             body: dict[str, Any] = {
                 "ticket_id": tid,
                 "filename": name,
-                "data_base64": base64.b64encode(data).decode("ascii"),
-                "content_type": mime,
-                "isimage": mime.lower().startswith("image/"),
+                "data_base64": f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}",
                 "showforusers": not hidden_from_user,
             }
             if action_id is not None:
@@ -669,7 +678,9 @@ def _data_url_type(content: str, encoding: str) -> str | None:
 
 
 def _guess_type(filename: str) -> str:
-    return mimetypes.guess_type(filename, strict=False)[0] or "application/octet-stream"
+    # Report formats first: mimetypes reads the OS registry on Windows, where .csv is application/vnd.ms-excel.
+    known = _REPORT_TYPES.get(PurePosixPath(filename.lower()).suffix)
+    return known or mimetypes.guess_type(filename, strict=False)[0] or "application/octet-stream"
 
 
 def _minutes(timetaken: float | None, time_taken_minutes: float | None) -> float | None:

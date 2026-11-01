@@ -652,6 +652,13 @@ def b64(text: str) -> str:
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
+def data_url(body: dict) -> tuple[str, str]:
+    """(mime, decoded text) from the data URL HaloPSA expects in data_base64."""
+    head, _, payload = body["data_base64"].partition(",")
+    assert head.startswith("data:") and head.endswith(";base64"), head
+    return head[5:-7], base64.b64decode(payload).decode("utf-8")
+
+
 @pytest.mark.parametrize(
     ("filename", "text", "mime"), [("report.csv", CSV, "text/csv"), ("report.html", HTML, "text/html")]
 )
@@ -660,9 +667,10 @@ async def test_add_attachment_base64_round_trips(call, attach, filename, text, m
     body = sent(attach)
     assert len(body) == 1
     body = body[0]
-    assert base64.b64decode(body["data_base64"]).decode("utf-8") == text
-    assert body["ticket_id"] == 5 and body["filename"] == filename and body["content_type"] == mime
-    assert body["isimage"] is False and body["showforusers"] is False and "action_id" not in body
+    assert data_url(body) == (mime, text)
+    # Only fields of HaloPSA's Attachment schema: no content_type / isimage (they made POST /Attachment fail).
+    assert set(body) == {"ticket_id", "filename", "data_base64", "showforusers"}
+    assert body["ticket_id"] == 5 and body["filename"] == filename and body["showforusers"] is False
     assert out == {
         "ticket_id": 5,
         "attachment_id": 77,
@@ -678,7 +686,7 @@ async def test_add_attachment_text_encoding(call, attach):
     out = await call(
         "halopsa_tickets_add_attachment", ticket_id=5, filename="report.csv", content=CSV, content_encoding="text"
     )
-    assert base64.b64decode(sent(attach)[0]["data_base64"]).decode("utf-8") == CSV
+    assert data_url(sent(attach)[0]) == ("text/csv", CSV)
     assert out["size_bytes"] == len(CSV.encode("utf-8"))
 
 
@@ -686,15 +694,14 @@ async def test_add_attachment_data_url_and_explicit_type(call, attach):
     await call(
         "halopsa_tickets_add_attachment", ticket_id=5, filename="r.bin", content="data:text/csv;base64," + b64(CSV)
     )
-    assert sent(attach)[0]["content_type"] == "text/csv"
-    await call(
+    assert data_url(sent(attach)[0]) == ("text/csv", CSV)
+    out = await call(
         "halopsa_tickets_add_attachment", ticket_id=5, filename="r.png", content=b64("x"), content_type="image/png"
     )
-    body = sent(attach)[0]
-    assert body["content_type"] == "image/png" and body["isimage"] is True
+    assert sent(attach)[0]["data_base64"].startswith("data:image/png;base64,") and out["content_type"] == "image/png"
     await call("halopsa_tickets_add_attachment", ticket_id=5, filename="dir/r.unknownext", content=b64("x"))
     body = sent(attach)[0]
-    assert body["filename"] == "r.unknownext" and body["content_type"] == "application/octet-stream"
+    assert body["filename"] == "r.unknownext" and body["data_base64"].startswith("data:application/octet-stream;")
 
 
 async def test_add_attachment_size_limit(call, attach):
@@ -764,6 +771,13 @@ async def test_add_attachment_missing_ticket(respx_mock, call):
     upload = respx_mock.post(f"{API}/Attachment")
     out = await call("halopsa_tickets_add_attachment", ticket_id=9, filename="r.csv", content=b64("x"))
     assert out["error"]["code"] == "not_found" and "9" in out["error"]["message"] and not upload.called
+
+
+async def test_add_attachment_server_error_is_not_resent(call, attach):
+    # HaloPSA may have saved the file before failing; a resend could attach it twice.
+    attach.mock(return_value=httpx.Response(500, text="boom", headers={"Retry-After": "0"}))
+    out = await call("halopsa_tickets_add_attachment", ticket_id=5, filename="r.csv", content=b64("x"))
+    assert out["error"]["code"] == "upstream_error" and attach.call_count == 1
 
 
 async def test_add_attachment_failure_after_note_names_action(respx_mock, call, attach):
