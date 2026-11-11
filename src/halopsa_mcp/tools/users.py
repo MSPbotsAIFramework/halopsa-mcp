@@ -76,12 +76,20 @@ async def _find_by_email(client: api.HaloClient, email: str) -> dict[str, Any] |
 def register(mcp: FastMCP, settings: Settings) -> None:
     @mcp.tool(
         name="halopsa_users_search",
-        description="Search contacts by name or email",
+        description=(
+            "Search contacts by name, email or phone number; omit query to list every contact "
+            "(paged, active and inactive with include_inactive)."
+        ),
         annotations=READ,
         structured_output=False,
     )
     async def halopsa_users_search(
-        query: str,
+        query: Annotated[
+            str | None, Field(description="Text to match in the contact's name or email. Omit to list all.")
+        ] = None,
+        search_phonenumbers: Annotated[
+            bool | None, Field(description="Match query against the contact's phone fields instead of name/email.")
+        ] = None,
         limit: Limit50 = None,
         client_id: Annotated[int | None, Field(description="Only contacts of this client.")] = None,
         include_inactive: Annotated[bool | None, Field(description="Include inactive contacts.")] = None,
@@ -90,14 +98,22 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         size = cap(limit, 50)
 
         async def handler(client: api.HaloClient):
-            if not query.strip():
-                raise ToolInputError("query must not be empty.")
+            text = (query or "").strip()
+            if search_phonenumbers and not text:
+                raise ToolInputError("query must not be empty when search_phonenumbers is set.")
             params = {
-                "search": query.strip(),
+                "search": text or None,
+                "search_phonenumbers": True if search_phonenumbers else None,
                 "client_id": client_id,
                 "includeinactive": True if include_inactive else None,
             }
-            return await fetch_page(client, "/Users", "users", params, size, offset)
+            page = await fetch_page(client, "/Users", "users", params, size, offset)
+            # PRD-22078: every phone field a contact has (CONTACT_DETAIL_FIELDS), not the narrower
+            # CONTACT_FIELDS -- contact sync needs all of them (phonenumber, phonenumber_preferred,
+            # mobilenumber, mobilenumber2), not just the one halopsa_users_get's slim default kept
+            # for this tool's original name/email-search use case.
+            page["items"] = [slim(row, CONTACT_DETAIL_FIELDS) for row in page["items"]]
+            return page
 
         return await run(settings, handler)
 
