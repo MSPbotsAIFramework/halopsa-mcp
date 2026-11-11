@@ -20,9 +20,25 @@ def token_route(respx_mock):
     return respx_mock.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"access_token": "t"}))
 
 
+_BIG_DETAIL_FIELDS = (
+    # PRD-22078: halopsa_users_search now slims its response to CONTACT_DETAIL_FIELDS (users.py),
+    # which would drop every synthetic `field_*` key below -- these are real CONTACT_DETAIL_FIELDS
+    # names instead, carried at the same short per-field size (~48 chars, well under every
+    # _shrink() text_limit down to 80), so the cut path still gets exercised for that tool too;
+    # every other PAGED/WHOLE tool just carries a few more harmless passthrough fields.
+    "firstname", "surname", "title", "jobtitle", "department", "emailaddress", "email2", "email3",
+    "phonenumber", "phonenumber_preferred", "mobilenumber", "mobilenumber2", "client_name", "site_name", "notes",
+)
+
+
 def big(i):
     # ~2,000 characters of short fields: shortening long text can't make a page of 50 fit.
-    return {"id": i, "name": f"record {i:04d}", **{f"field_{k}": f"value {k} " * 6 for k in range(30)}}
+    return {
+        "id": i,
+        "name": f"record {i:04d}",
+        **{f: f"value {f} " * 6 for f in _BIG_DETAIL_FIELDS},
+        **{f"field_{k}": f"value {k} " * 6 for k in range(30)},
+    }
 
 
 def paged_api(respx_mock, path, key, rows):
