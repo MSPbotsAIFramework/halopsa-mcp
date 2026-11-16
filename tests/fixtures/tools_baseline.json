@@ -601,21 +601,104 @@
  },
  {
   "name": "halopsa_users_search",
-  "description": "Search contacts by name or email",
+  "description": "Search contacts by name, email or phone number; omit query to list every contact (paged, active and inactive with include_inactive).",
   "inputSchema": {
-   "type": "object",
    "properties": {
     "query": {
-     "type": "string"
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Text to match in the contact's name or email. Omit to list all.",
+     "title": "Query"
+    },
+    "search_phonenumbers": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Match query against the contact's phone fields instead of name/email.",
+     "title": "Search Phonenumbers"
     },
     "limit": {
-     "type": "number",
-     "description": "Maximum number of results (default: 50)"
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Maximum number of results (default: 50, max 200).",
+     "title": "Limit"
+    },
+    "client_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Only contacts of this client.",
+     "title": "Client Id"
+    },
+    "include_inactive": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Include inactive contacts.",
+     "title": "Include Inactive"
+    },
+    "include_details": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Ask HaloPSA for full contact records, so every phone field (home, fax) is present.",
+     "title": "Include Details"
+    },
+    "offset": {
+     "anyOf": [
+      {
+       "minimum": 0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Record position to start from (0-based). Pass next_offset from the previous result.",
+     "title": "Offset"
     }
    },
-   "required": [
-    "query"
-   ]
+   "title": "halopsa_users_searchArguments",
+   "type": "object"
   }
  },
  {
@@ -823,6 +906,24 @@
    "required": [
     "ticket_id"
    ]
+  }
+ },
+ {
+  "name": "halopsa_phone_search",
+  "description": "Find who owns a phone number: contacts (any phone field), and the clients and sites whose own phone matches. At most 3 HaloPSA requests; active and inactive records.",
+  "inputSchema": {
+   "properties": {
+    "phone": {
+     "description": "Phone number in any format; only the digits are used.",
+     "title": "Phone",
+     "type": "string"
+    }
+   },
+   "required": [
+    "phone"
+   ],
+   "title": "halopsa_phone_searchArguments",
+   "type": "object"
   }
  }
 ]

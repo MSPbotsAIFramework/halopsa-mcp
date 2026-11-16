@@ -3,6 +3,7 @@
 """Shared plumbing for tool handlers."""
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
@@ -125,6 +126,45 @@ def slim(record: dict[str, Any], fields: tuple[str, ...] | None = None) -> dict[
             value = custom_fields(value)
         if not _empty(value):
             out[key] = value
+    return out
+
+
+# PRD-22078: every phone-like key of a raw Halo record. Matching on the key shape instead of a fixed
+# list means a contact, client or site field Halo adds or names differently (home, fax, a site's
+# own number) is still returned, so contact sync never silently misses a number.
+PHONE_KEY_RE = re.compile(r"phone|mobile|fax|(^|_)tel|^homenumber$", re.IGNORECASE)
+NOT_A_NUMBER_KEY_RE = re.compile(r"(_id|_name|_type|_ext|_extension|_country|_code|_use|_label)$", re.IGNORECASE)
+COUNTRY_KEY_RE = re.compile(r"country", re.IGNORECASE)
+
+
+def phone_fields(record: dict[str, Any]) -> dict[str, str]:
+    """Every phone-like field of the raw ``record`` that holds a value, as ``{key: text}``."""
+    out: dict[str, str] = {}
+    for key, value in record.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if PHONE_KEY_RE.search(key) and not NOT_A_NUMBER_KEY_RE.search(key):
+            out[key] = value.strip()
+    return out
+
+
+def country_of(record: dict[str, Any]) -> str | None:
+    """The record's country as Halo sends it (name or ISO code), or None. The platform normalises it."""
+    for key, value in record.items():
+        if COUNTRY_KEY_RE.search(key) and isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def with_phones(raw: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    """``item`` plus the raw record's ``phone_fields`` (and ``country`` when it has one)."""
+    out = dict(item)
+    fields = phone_fields(raw)
+    if fields:
+        out["phone_fields"] = fields
+    country = country_of(raw)
+    if country:
+        out["country"] = country
     return out
 
 

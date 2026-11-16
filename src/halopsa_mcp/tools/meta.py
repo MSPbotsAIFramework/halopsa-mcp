@@ -53,7 +53,13 @@ DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
     "users": (
         "Contact management - search, get, create (with duplicate-prevention by email) and update "
         "(partial, including activate/deactivate) contacts",
-        ("halopsa_users_search", "halopsa_users_get", "halopsa_users_create", "halopsa_users_update"),
+        (
+            "halopsa_users_search",
+            "halopsa_users_get",
+            "halopsa_users_create",
+            "halopsa_users_update",
+            "halopsa_phone_search",
+        ),
     ),
     "sites": ("Site management - list sites, optionally scoped to one client", ("halopsa_sites_list",)),
 }

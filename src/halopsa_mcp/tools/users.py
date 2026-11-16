@@ -10,7 +10,21 @@ from pydantic import Field
 
 from .. import api
 from ..config import Settings
-from ._common import CREATE, READ, UPDATE, Limit50, Offset, ToolInputError, cap, fetch_page, run, seg, slim
+from ._common import (
+    CREATE,
+    READ,
+    UPDATE,
+    Limit50,
+    Offset,
+    ToolInputError,
+    cap,
+    fetch_page,
+    phone_fields,
+    run,
+    seg,
+    slim,
+    with_phones,
+)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CONTACT_FIELDS = (
@@ -52,11 +66,31 @@ CONTACT_DETAIL_FIELDS = (
 )
 
 
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value)
+
+
+def _same_number(a: str, b: str) -> bool:
+    """Same phone number whatever the formatting: equal digits, or equal last ten digits (country code optional)."""
+    da, db = _digits(a), _digits(b)
+    if len(da) < 7 or len(db) < 7:
+        return False
+    return da == db or (len(da) >= 10 and len(db) >= 10 and da[-10:] == db[-10:])
+
+
+def _holds(record: dict[str, Any], digits: str) -> bool:
+    return any(_same_number(value, digits) for value in phone_fields(record).values())
+
+
 def _email(value: str) -> str:
     text = value.strip()
     if not EMAIL_RE.match(text):
         raise ToolInputError(f"{value!r} is not a valid email address.")
     return text
+
+
+def _phones_of(row: dict[str, Any]) -> dict[str, Any]:
+    return with_phones(row, {}) if phone_fields(row) else {}
 
 
 def _contact(raw: dict[str, Any]) -> dict[str, Any]:
@@ -93,6 +127,10 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         limit: Limit50 = None,
         client_id: Annotated[int | None, Field(description="Only contacts of this client.")] = None,
         include_inactive: Annotated[bool | None, Field(description="Include inactive contacts.")] = None,
+        include_details: Annotated[
+            bool | None,
+            Field(description="Ask HaloPSA for full contact records, so every phone field (home, fax) is present."),
+        ] = None,
         offset: Offset = None,
     ) -> str:
         size = cap(limit, 50)
@@ -106,14 +144,58 @@ def register(mcp: FastMCP, settings: Settings) -> None:
                 "search_phonenumbers": True if search_phonenumbers else None,
                 "client_id": client_id,
                 "includeinactive": True if include_inactive else None,
+                "includedetails": True if include_details else None,
             }
             page = await fetch_page(client, "/Users", "users", params, size, offset)
-            # PRD-22078: every phone field a contact has (CONTACT_DETAIL_FIELDS), not the narrower
-            # CONTACT_FIELDS -- contact sync needs all of them (phonenumber, phonenumber_preferred,
-            # mobilenumber, mobilenumber2), not just the one halopsa_users_get's slim default kept
-            # for this tool's original name/email-search use case.
-            page["items"] = [slim(row, CONTACT_DETAIL_FIELDS) for row in page["items"]]
+            # PRD-22078: the detail field set (CONTACT_DETAIL_FIELDS), not the narrower CONTACT_FIELDS,
+            # plus phone_fields read from the raw row: slim() keeps only the detail set, which has no
+            # home or fax number, and contact sync needs every number a contact has.
+            page["items"] = [with_phones(row, slim(row, CONTACT_DETAIL_FIELDS)) for row in page["items"]]
             return page
+
+        return await run(settings, handler)
+
+    @mcp.tool(
+        name="halopsa_phone_search",
+        description=(
+            "Find who owns a phone number: contacts (any phone field), and the clients and sites whose own phone "
+            "matches. At most 3 HaloPSA requests; active and inactive records."
+        ),
+        annotations=READ,
+        structured_output=False,
+    )
+    async def halopsa_phone_search(
+        phone: Annotated[str, Field(description="Phone number in any format; only the digits are used.")],
+    ) -> str:
+        async def handler(client: api.HaloClient):
+            digits = _digits(phone)
+            if len(digits) < 7:
+                raise ToolInputError("phone must hold at least 7 digits.")
+            params = {"search": digits, "includeinactive": True, "includedetails": True, "count": 10}
+            found = api.rows(await client.get("/Users", {**params, "search_phonenumbers": True}), "users")
+            contacts = [with_phones(row, slim(row, CONTACT_DETAIL_FIELDS)) for row in found if _holds(row, digits)]
+            clients: list[dict[str, Any]] = []
+            # A single contact is a final answer; otherwise the number may belong to a client or a site.
+            if len(contacts) != 1:
+                for row in api.rows(
+                    await client.get("/Client", {"search": digits, "includeinactive": True}), "clients"
+                ):
+                    if _holds(row, digits):
+                        clients.append(
+                            {"id": row.get("id"), "name": row.get("name"), "matched": "main", **_phones_of(row)}
+                        )
+                for row in api.rows(await client.get("/Site", {"search": digits, "includeinactive": True}), "sites"):
+                    if _holds(row, digits) and row.get("client_id") is not None:
+                        clients.append(
+                            {
+                                "id": row.get("client_id"),
+                                "name": row.get("client_name"),
+                                "matched": "site",
+                                "site_name": row.get("name"),
+                                **_phones_of(row),
+                            }
+                        )
+            return {"contacts": contacts, "clients": clients}
 
         return await run(settings, handler)
 
@@ -128,7 +210,7 @@ def register(mcp: FastMCP, settings: Settings) -> None:
     ) -> str:
         async def handler(client: api.HaloClient):
             record = api.first(await client.get(f"/Users/{seg(contact_id)}", {"includedetails": True}))
-            return record if full_response else slim(record, CONTACT_DETAIL_FIELDS)
+            return record if full_response else with_phones(record, slim(record, CONTACT_DETAIL_FIELDS))
 
         return await run(settings, handler)
 
