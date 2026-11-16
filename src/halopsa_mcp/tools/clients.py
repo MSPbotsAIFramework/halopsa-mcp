@@ -22,6 +22,7 @@ from ._common import (
     run,
     seg,
     slim,
+    with_phones,
 )
 
 CREATED_FIELDS = (
@@ -43,7 +44,10 @@ def register(mcp: FastMCP, settings: Settings) -> None:
         client: api.HaloClient, size: int, offset: int | None, search: str | None, inactive: bool | None
     ) -> dict:
         params = {"search": search, "includeinactive": True if inactive else None}
-        return await fetch_page(client, "/Client", "clients", params, size, offset)
+        page = await fetch_page(client, "/Client", "clients", params, size, offset)
+        # PRD-22078: phone_fields (every number on the record) and the country, for contact sync.
+        page["items"] = [with_phones(row, row) for row in page["items"]]
+        return page
 
     @mcp.tool(name="halopsa_clients_list", description="List companies", annotations=READ, structured_output=False)
     async def halopsa_clients_list(
@@ -60,7 +64,8 @@ def register(mcp: FastMCP, settings: Settings) -> None:
     )
     async def halopsa_clients_get(client_id: int) -> str:
         async def handler(client: api.HaloClient):
-            return slim(api.first(await client.get(f"/Client/{seg(client_id)}", {"includedetails": True})))
+            record = api.first(await client.get(f"/Client/{seg(client_id)}", {"includedetails": True}))
+            return with_phones(record, slim(record))
 
         return await run(settings, handler)
 
